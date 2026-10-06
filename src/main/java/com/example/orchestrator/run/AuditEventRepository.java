@@ -7,4 +7,7 @@ import java.util.UUID;
 
 public interface AuditEventRepository extends JpaRepository<AuditEvent, UUID> {
     List<AuditEvent> findByRun_IdOrderByHappenedAtAsc(UUID runId);
+    List<AuditEvent> findByActionOrderByHappenedAtAsc(String action);
+    List<AuditEvent> findByRun_IdAndActionOrderByHappenedAtDesc(UUID runId, String action);
+    long countByAction(String action);
 }

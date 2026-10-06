@@ -46,6 +46,7 @@ public class AuditEvent {
     }
 
     public UUID getId() { return id; }
+    public OrchestrationRun getRun() { return run; }
     public String getAction() { return action; }
     public String getActor() { return actor; }
     public String getDetails() { return details; }

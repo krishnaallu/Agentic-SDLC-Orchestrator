@@ -6,8 +6,8 @@ CREATE TABLE orchestration_run (
     decision_actor VARCHAR(200),
     decision_note TEXT,
     version BIGINT NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
 CREATE TABLE orchestration_task (
@@ -30,7 +30,7 @@ CREATE TABLE orchestration_audit_event (
     action VARCHAR(80) NOT NULL,
     actor VARCHAR(200) NOT NULL,
     details TEXT NOT NULL,
-    happened_at TIMESTAMPTZ NOT NULL
+    happened_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
 CREATE INDEX orchestration_audit_run_idx ON orchestration_audit_event(run_id, happened_at);

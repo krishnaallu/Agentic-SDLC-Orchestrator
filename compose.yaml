@@ -1,4 +1,17 @@
 services:
+  temporal:
+    image: temporalio/temporal:latest
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--ui-port", "8233", "--db-filename", "/var/lib/temporal/temporal.db"]
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    volumes:
+      - temporal-data:/var/lib/temporal
+    healthcheck:
+      test: ["CMD", "temporal", "workflow", "list", "--address", "localhost:7233"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
   postgres:
     image: postgres:17-alpine
     environment:
@@ -17,3 +30,4 @@ services:
 
 volumes:
   postgres-data:
+  temporal-data:

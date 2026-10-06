@@ -3,11 +3,12 @@ package com.example.orchestrator.run;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.UUID;
 
 @Component
 public class DeterministicPlanningAgent implements PlannedAgent {
     @Override
-    public List<TaskBlueprint> plan(String requirement, RunScenario scenario) {
+    public List<TaskBlueprint> plan(UUID runId, String requirement, String codebaseContext, RunScenario scenario) {
         String firstKey = switch (scenario) {
             case GREENFIELD -> "requirement-analysis";
             case BROWNFIELD -> "codebase-analysis";

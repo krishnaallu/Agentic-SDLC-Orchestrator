@@ -1,0 +1,97 @@
+package com.example.orchestrator.workflow;
+
+import com.example.orchestrator.run.ArtifactDraft;
+import com.example.orchestrator.run.ArtifactStatus;
+import com.example.orchestrator.run.AuditEvent;
+import com.example.orchestrator.run.AuditEventRepository;
+import com.example.orchestrator.run.OrchestrationArtifact;
+import com.example.orchestrator.run.OrchestrationArtifactRepository;
+import com.example.orchestrator.run.OrchestrationRun;
+import com.example.orchestrator.run.OrchestrationRunRepository;
+import com.example.orchestrator.run.OrchestrationTask;
+import com.example.orchestrator.run.TaskBlueprint;
+import com.example.orchestrator.run.TaskStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class OrchestrationTaskStateService {
+    private final OrchestrationRunRepository runRepository;
+    private final AuditEventRepository auditRepository;
+    private final OrchestrationArtifactRepository artifactRepository;
+
+    public OrchestrationTaskStateService(OrchestrationRunRepository runRepository,
+                                         AuditEventRepository auditRepository,
+                                         OrchestrationArtifactRepository artifactRepository) {
+        this.runRepository = runRepository;
+        this.auditRepository = auditRepository;
+        this.artifactRepository = artifactRepository;
+    }
+
+    @Transactional
+    public TaskExecutionContext beginTask(String runId, String taskKey) {
+        OrchestrationRun run = findRun(runId);
+        OrchestrationTask task = findTask(run, taskKey);
+        if (task.getStatus() == TaskStatus.SUCCEEDED) {
+            return null;
+        }
+        task.markRunning();
+        auditRepository.save(event(run, "TASK_STARTED", taskKey + " attempt " + task.getAttemptCount()));
+        return new TaskExecutionContext(run.getId().toString(), run.getRequirement(), run.getCodebaseContext(), run.getClarificationNotes(),
+            run.getScenario(), new TaskBlueprint(task.getNodeKey(), task.getTitle(), task.getDescription(), task.getDependencies()));
+    }
+
+    @Transactional
+    public void completeTask(String runId, String taskKey, List<ArtifactDraft> drafts) {
+        OrchestrationRun run = findRun(runId);
+        OrchestrationTask task = findTask(run, taskKey);
+        for (ArtifactDraft draft : drafts) {
+            if (!artifactRepository.existsByRun_IdAndPath(run.getId(), draft.path())) {
+                artifactRepository.save(new OrchestrationArtifact(UUID.randomUUID(), run, taskKey,
+                        draft.path(), draft.mediaType(), draft.content(), ArtifactStatus.PROPOSED));
+            }
+        }
+        task.markSucceeded("Generated " + drafts.size() + " reviewable artifact(s)");
+        auditRepository.save(event(run, "TASK_SUCCEEDED", taskKey + ": " + drafts.size() + " artifact(s)"));
+    }
+
+    @Transactional
+    public void failTask(String runId, String taskKey, String reason) {
+        OrchestrationRun run = findRun(runId);
+        OrchestrationTask task = findTask(run, taskKey);
+        task.markFailed(safeSummary(reason));
+        auditRepository.save(event(run, "TASK_ATTEMPT_FAILED", taskKey + ": " + safeSummary(reason)));
+    }
+
+    @Transactional
+    public void recordAgentFallback(String runId, String stage, String providerFailureType) {
+        OrchestrationRun run = findRun(runId);
+        auditRepository.save(event(run, "AGENT_FALLBACK", stage + " used deterministic template after provider failure: "
+                + providerFailureType));
+    }
+
+    private OrchestrationRun findRun(String runId) {
+        return runRepository.findById(UUID.fromString(runId))
+                .orElseThrow(() -> new IllegalStateException("Run not found: " + runId));
+    }
+
+    private OrchestrationTask findTask(OrchestrationRun run, String taskKey) {
+        return run.getTasks().stream().filter(task -> task.getNodeKey().equals(taskKey)).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Task not found: " + taskKey));
+    }
+
+    private AuditEvent event(OrchestrationRun run, String action, String details) {
+        return new AuditEvent(UUID.randomUUID(), run, action, "temporal-worker", details, Instant.now());
+    }
+
+    private String safeSummary(String value) {
+        if (value == null || value.isBlank()) {
+            return "Unspecified execution failure";
+        }
+        return value.substring(0, Math.min(value.length(), 1000));
+    }
+}

@@ -13,6 +13,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.util.List;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -45,6 +46,15 @@ public class OrchestrationTask {
     @Column(name = "sequence_number", nullable = false)
     private int sequenceNumber;
 
+    @Column(name = "attempt_count", nullable = false)
+    private int attemptCount;
+
+    @Column(name = "output_summary", columnDefinition = "text")
+    private String outputSummary;
+
+    @Column(name = "completed_at")
+    private Instant completedAt;
+
     protected OrchestrationTask() {
     }
 
@@ -61,6 +71,22 @@ public class OrchestrationTask {
 
     void setRun(OrchestrationRun run) { this.run = run; }
 
+    public void markRunning() {
+        status = TaskStatus.RUNNING;
+        attemptCount++;
+    }
+
+    public void markSucceeded(String summary) {
+        status = TaskStatus.SUCCEEDED;
+        outputSummary = summary;
+        completedAt = Instant.now();
+    }
+
+    public void markFailed(String summary) {
+        status = TaskStatus.FAILED;
+        outputSummary = summary;
+    }
+
     public UUID getId() { return id; }
     public String getNodeKey() { return nodeKey; }
     public String getTitle() { return title; }
@@ -68,4 +94,7 @@ public class OrchestrationTask {
     public List<String> getDependencies() { return dependencies; }
     public TaskStatus getStatus() { return status; }
     public int getSequenceNumber() { return sequenceNumber; }
+    public int getAttemptCount() { return attemptCount; }
+    public String getOutputSummary() { return outputSummary; }
+    public Instant getCompletedAt() { return completedAt; }
 }
