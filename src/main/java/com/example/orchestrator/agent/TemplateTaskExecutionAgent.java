@@ -59,7 +59,8 @@ public class TemplateTaskExecutionAgent implements TaskExecutionAgent {
                 case "tests" -> List.of(
                     javaSource("src/test/java/com/example/urlshortener/LinkServiceTest.java", serviceTest()),
                     javaSource("src/test/java/com/example/urlshortener/DestinationPolicyTest.java", destinationPolicyTest()),
-                    javaSource("src/test/java/com/example/urlshortener/LinkControllerSecurityTest.java", controllerSecurityTest()));
+                    javaSource("src/test/java/com/example/urlshortener/LinkControllerSecurityTest.java", controllerSecurityTest()),
+                    javaSource("src/test/java/com/example/urlshortener/LocalProfileSecurityTest.java", localProfileSecurityTest()));
                     case "integration-tests" -> List.of(markdown("integration-test-plan.md", "# Integration test plan\n\n"
                         + "Use a real PostgreSQL Testcontainer and HTTP tests against the Spring application. Verify creation, public redirect, "
                         + "scope-protected analytics, malformed and unsafe destination rejection, expiration, collision retry, and concurrent "
@@ -75,9 +76,12 @@ public class TemplateTaskExecutionAgent implements TaskExecutionAgent {
                     + "`DATABASE_PASSWORD`, Redis with `REDIS_HOST` / `REDIS_PORT`, JWT issuer with `AUTH_ISSUER_URI`, "
                     + "and `RATE_LIMIT_HASH_KEY` (at least 32 random bytes). Set `ALLOWED_ORIGINS` explicitly. "
                     + "Start PostgreSQL and Redis with `docker compose up -d`; run tests with `mvn test`.\n\n"
-                    + "Creation requires JWT scope `links:write`; analytics requires `links:read`; redirects are public. "
-                    + "Do not trust X-Forwarded-For unless a trusted reverse proxy strips and sets it. Use HTTPS at the "
-                    + "edge and restrict allowed CORS origins.\n"),
+                    + "The default `local` profile disables authentication and binds to 127.0.0.1 for local development. "
+                    + "For authenticated use, set `SPRING_PROFILES_ACTIVE=secure` and `AUTH_ISSUER_URI`; link creation "
+                    + "requires JWT scope `links:write`, analytics requires `links:read`, and redirects remain public. "
+                    + "Compose explicitly uses the `secure` profile because loopback binding is not reachable through "
+                    + "published container ports. Set `RATE_LIMIT_HASH_KEY` in either profile. Do not trust X-Forwarded-For "
+                    + "unless a trusted reverse proxy strips and sets it. Use HTTPS at the edge and restrict allowed CORS origins.\n"),
                     new ArtifactDraft(ROOT + "src/main/resources/api/openapi.yaml", "text/yaml", openApiSchema()));
                     case "deployment-readiness" -> List.of(markdown("deployment-readiness.md", "# Deployment readiness\n\n"
                         + "Run behind an HTTPS reverse proxy. Set PostgreSQL, Redis, JWT issuer, CORS origins, rate-limit HMAC secret, and quota "
@@ -154,13 +158,13 @@ public class TemplateTaskExecutionAgent implements TaskExecutionAgent {
                         """),
                 properties("src/main/resources/application.properties", """
                         spring.application.name=url-shortener
+                    spring.profiles.default=local
                         spring.datasource.url=${DATABASE_URL:jdbc:postgresql://localhost:5432/urlshortener}
                         spring.datasource.username=${DATABASE_USERNAME:urlshortener}
                         spring.datasource.password=${DATABASE_PASSWORD:urlshortener}
                         spring.jpa.hibernate.ddl-auto=validate
                         spring.jpa.open-in-view=false
                         server.error.include-message=never
-                        spring.security.oauth2.resourceserver.jwt.issuer-uri=${AUTH_ISSUER_URI}
                         management.endpoints.web.exposure.include=health,info,prometheus
                         management.endpoint.health.probes.enabled=true
                         spring.data.redis.host=${REDIS_HOST:localhost}
@@ -170,6 +174,14 @@ public class TemplateTaskExecutionAgent implements TaskExecutionAgent {
                         app.rate-limit.requests-per-minute=${RATE_LIMIT_PER_MINUTE:60}
                         server.max-http-request-header-size=8KB
                         server.tomcat.max-http-form-post-size=8KB
+                        """),
+                    properties("src/main/resources/application-local.properties", """
+                        app.security.enabled=false
+                        server.address=127.0.0.1
+                        """),
+                    properties("src/main/resources/application-secure.properties", """
+                        app.security.enabled=true
+                        spring.security.oauth2.resourceserver.jwt.issuer-uri=${AUTH_ISSUER_URI}
                         """),
                 sql("src/main/resources/db/migration/V1__create_short_link.sql", """
                         CREATE TABLE short_link (
@@ -201,6 +213,7 @@ public class TemplateTaskExecutionAgent implements TaskExecutionAgent {
                                                         build: .
                                                         ports: ["8080:8080"]
                                                         environment:
+                                                            SPRING_PROFILES_ACTIVE: secure
                                                             DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-urlshortener}
                                                             DATABASE_USERNAME: ${POSTGRES_USER:-urlshortener}
                                                             DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
@@ -408,21 +421,29 @@ public class TemplateTaskExecutionAgent implements TaskExecutionAgent {
                         @EnableMethodSecurity
                         public class SecurityConfiguration {
                             @Bean
-                            SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                    CorsConfigurationSource corsConfigurationSource) throws Exception {
+                                SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                    CorsConfigurationSource corsConfigurationSource,
+                                    @Value("${app.security.enabled:true}") boolean securityEnabled) throws Exception {
                                 http.cors(cors -> cors.configurationSource(corsConfigurationSource))
                                     .csrf(csrf -> csrf.disable())
                                     .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                                     .headers(headers -> headers.frameOptions(frame -> frame.deny())
                                             .contentTypeOptions(contentType -> {})
                                             .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000)))
-                                    .authorizeHttpRequests(authorize -> authorize
-                                            .requestMatchers("/actuator/health/**").permitAll()
+                                    .authorizeHttpRequests(authorize -> {
+                                        if (!securityEnabled) {
+                                            authorize.anyRequest().permitAll();
+                                            return;
+                                        }
+                                        authorize.requestMatchers("/actuator/health/**").permitAll()
                                             .requestMatchers(HttpMethod.POST, "/api/v1/links").hasAnyAuthority("SCOPE_links:write", "SCOPE_links:admin")
                                             .requestMatchers(HttpMethod.GET, "/api/v1/links/*/analytics").hasAnyAuthority("SCOPE_links:read", "SCOPE_links:admin")
                                             .requestMatchers(HttpMethod.GET, "/api/v1/links/*").permitAll()
-                                            .anyRequest().denyAll())
-                                    .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> {}));
+                                            .anyRequest().denyAll();
+                                    });
+                                if (securityEnabled) {
+                                    http.oauth2ResourceServer(oauth -> oauth.jwt(jwt -> {}));
+                                }
                                 return http.build();
                             }
 
@@ -670,7 +691,7 @@ public class TemplateTaskExecutionAgent implements TaskExecutionAgent {
                 import org.springframework.test.web.servlet.MockMvc;
 
                 @WebMvcTest(LinkController.class)
-                @TestPropertySource(properties = "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://issuer.example.test")
+                @TestPropertySource(properties = {"app.security.enabled=true", "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://issuer.example.test"})
                 @Import(SecurityConfiguration.class)
                 class LinkControllerSecurityTest {
                     @Autowired MockMvc mvc;
@@ -704,6 +725,48 @@ public class TemplateTaskExecutionAgent implements TaskExecutionAgent {
                         mvc.perform(get("/api/v1/links/abc123/analytics")).andExpect(status().isUnauthorized());
                         mvc.perform(get("/api/v1/links/abc123/analytics").with(jwt().authorities(
                                         new SimpleGrantedAuthority("SCOPE_links:read"))))
+                                .andExpect(status().isOk());
+                    }
+                }
+                """;
+    }
+
+    private String localProfileSecurityTest() {
+        return """
+                package com.example.urlshortener.api;
+
+                import com.example.urlshortener.config.SecurityConfiguration;
+                import com.example.urlshortener.domain.Link;
+                import com.example.urlshortener.security.RateLimitFilter;
+                import com.example.urlshortener.service.LinkService;
+                import static org.mockito.ArgumentMatchers.any;
+                import static org.mockito.ArgumentMatchers.nullable;
+                import static org.mockito.Mockito.when;
+                import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+                import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+                import java.time.Instant;
+                import org.junit.jupiter.api.Test;
+                import org.springframework.beans.factory.annotation.Autowired;
+                import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+                import org.springframework.context.annotation.Import;
+                import org.springframework.http.MediaType;
+                import org.springframework.test.context.ActiveProfiles;
+                import org.springframework.test.context.bean.override.mockito.MockitoBean;
+                import org.springframework.test.web.servlet.MockMvc;
+
+                @ActiveProfiles("local")
+                @WebMvcTest(LinkController.class)
+                @Import(SecurityConfiguration.class)
+                class LocalProfileSecurityTest {
+                    @Autowired MockMvc mvc;
+                    @MockitoBean LinkService service;
+                    @MockitoBean RateLimitFilter rateLimitFilter;
+
+                    @Test void localProfileAllowsLinkCreationWithoutJwt() throws Exception {
+                        when(service.create(any(), nullable(Instant.class))).thenReturn(
+                                new Link("abc123", "https://example.com", Instant.now(), null));
+                        mvc.perform(post("/api/v1/links").contentType(MediaType.APPLICATION_JSON)
+                                .content("{\\\"url\\\":\\\"https://example.com\\\"}"))
                                 .andExpect(status().isOk());
                     }
                 }

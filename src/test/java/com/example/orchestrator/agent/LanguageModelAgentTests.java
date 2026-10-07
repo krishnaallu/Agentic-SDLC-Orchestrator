@@ -100,6 +100,36 @@ class LanguageModelAgentTests {
                         .isEqualTo("generated/inventory/src/main/java/App.java");
             }
 
+    @Test
+    void generatedUrlShortenerDefaultsToLoopbackLocalProfileAndKeepsSecureJwtMode() {
+        List<ArtifactDraft> artifacts = new TemplateTaskExecutionAgent().execute(UUID.randomUUID(),
+                "Build a URL shortener", "", "", RunScenario.GREENFIELD,
+                new TaskBlueprint("implementation", "Implement", "Generate code", List.of()));
+
+        assertThat(generatedContent(artifacts, "src/main/resources/application.properties"))
+                .contains("spring.profiles.default=local")
+                .doesNotContain("spring.security.oauth2.resourceserver.jwt.issuer-uri");
+        assertThat(generatedContent(artifacts, "src/main/resources/application-local.properties"))
+                .contains("app.security.enabled=false", "server.address=127.0.0.1");
+        assertThat(generatedContent(artifacts, "src/main/resources/application-secure.properties"))
+                .contains("app.security.enabled=true", "spring.security.oauth2.resourceserver.jwt.issuer-uri=${AUTH_ISSUER_URI}");
+        assertThat(generatedContent(artifacts, "compose.yaml"))
+                .contains("SPRING_PROFILES_ACTIVE: secure");
+        List<ArtifactDraft> testArtifacts = new TemplateTaskExecutionAgent().execute(UUID.randomUUID(),
+                "Build a URL shortener", "", "", RunScenario.GREENFIELD,
+                new TaskBlueprint("tests", "Tests", "Generate tests", List.of()));
+        assertThat(testArtifacts).extracting(ArtifactDraft::path)
+                .contains("generated/url-shortener/src/test/java/com/example/urlshortener/LocalProfileSecurityTest.java");
+    }
+
+    private String generatedContent(List<ArtifactDraft> artifacts, String relativePath) {
+        return artifacts.stream()
+                .filter(artifact -> artifact.path().equals("generated/url-shortener/" + relativePath))
+                .findFirst()
+                .orElseThrow()
+                .content();
+    }
+
             @Test
             void doesNotFallBackToUrlShortenerWhenGenericProviderFails() {
                 when(client.generateJson(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
