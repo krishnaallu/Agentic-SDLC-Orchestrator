@@ -36,17 +36,20 @@ public class TemporalWorkflowCoordinator {
     private final OrchestrationRunRepository runRepository;
     private final AuditEventRepository auditRepository;
     private final OrchestrationArtifactRepository artifactRepository;
+    private final boolean reconciliationEnabled;
 
     public TemporalWorkflowCoordinator(WorkflowClient workflowClient,
                                        @Value("${orchestrator.temporal.task-queue}") String taskQueue,
                                        OrchestrationRunRepository runRepository,
                                        AuditEventRepository auditRepository,
-                                       OrchestrationArtifactRepository artifactRepository) {
+                                       OrchestrationArtifactRepository artifactRepository,
+                                       @Value("${orchestrator.temporal.reconcile.enabled:true}") boolean reconciliationEnabled) {
         this.workflowClient = workflowClient;
         this.taskQueue = taskQueue;
         this.runRepository = runRepository;
         this.auditRepository = auditRepository;
         this.artifactRepository = artifactRepository;
+        this.reconciliationEnabled = reconciliationEnabled;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -67,6 +70,9 @@ public class TemporalWorkflowCoordinator {
 
     @Scheduled(fixedDelayString = "${orchestrator.temporal.reconcile-delay:10000}", initialDelay = 10000)
     public void reconcilePersistedWorkflowState() {
+        if (!reconciliationEnabled) {
+            return;
+        }
         List<RunStatus> resumable = List.of(RunStatus.AWAITING_APPROVAL, RunStatus.APPROVED, RunStatus.REJECTED,
             RunStatus.RUNNING, RunStatus.AWAITING_CLARIFICATION, RunStatus.AWAITING_ARTIFACT_REVIEW);
         for (OrchestrationRun run : runRepository.findByStatusIn(resumable)) {

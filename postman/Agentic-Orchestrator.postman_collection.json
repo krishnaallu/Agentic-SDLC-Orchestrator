@@ -1,0 +1,393 @@
+{
+  "info": {
+    "_postman_id": "f1dc8a44-6a41-4c51-9b01-72a2766c90fb",
+    "name": "Agentic Engineering Orchestrator",
+    "description": "Demo collection for the local loopback-only orchestrator. Start PostgreSQL and Temporal, then run the Spring app before sending requests. The collection is organized by use case. Requests that depend on a workflow state must be sent only when the status shown in Get Run says the required state. Local profile requires no token. In secure profile, set accessToken in the selected environment. This orchestrator generates and validates proposals; it does not deploy or apply them to another service.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8080", "type": "string" },
+    { "key": "greenfieldRunId", "value": "", "type": "string" },
+    { "key": "brownfieldRunId", "value": "", "type": "string" },
+    { "key": "ambiguousRunId", "value": "", "type": "string" },
+    { "key": "replanRunId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "00 - Start Here and Monitoring",
+      "description": "Confirm the backend is up, see supported examples, and inspect aggregate reliability counters.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/health",
+            "description": "Use case: confirm Spring Boot and its health contributors are ready. Expected status: 200 and status UP."
+          },
+          "response": []
+        },
+        {
+          "name": "List Scenario Examples",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/scenarios",
+            "description": "Use case: inspect the built-in GREENFIELD, BROWNFIELD, and AMBIGUOUS prompts."
+          },
+          "response": []
+        },
+        {
+          "name": "Reliability Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/runs/metrics/reliability",
+            "description": "Use case: inspect aggregate run success, retries, recovery, and latency. In secure profile this request needs the orchestrator:ops scope."
+          },
+          "response": []
+        },
+        {
+          "name": "Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/prometheus",
+            "description": "Use case: scrape application metrics. In secure profile this requires orchestrator:ops. In local profile it is available without a token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 - Greenfield: Build a New Service",
+      "description": "Demo a new product/service request. Create the run, approve its plan, inspect task progress, then review/export artifacts when ready.",
+      "item": [
+        {
+          "name": "Create Greenfield Run",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Run created', function () { pm.response.to.have.status(201); });",
+                  "const data = pm.response.json();",
+                  "pm.collectionVariables.set('greenfieldRunId', data.id);",
+                  "pm.test('Run waits for plan approval', function () { pm.expect(data.status).to.eql('AWAITING_APPROVAL'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requirement\": \"Build an inventory service with products, stock adjustments, and a REST API\",\n  \"scenario\": \"GREENFIELD\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs",
+            "description": "Use case: start a new service proposal. The response stores the run ID in greenfieldRunId. Creating a run does not begin execution until the plan is approved."
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Greenfield Plan",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved\": true,\n  \"actor\": \"demo-reviewer\",\n  \"note\": \"Greenfield plan reviewed\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs/{{greenfieldRunId}}/decision",
+            "description": "Use case: approve the plan and allow workflow execution. Send after Create Greenfield Run. In secure mode this requires orchestrator:approve."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Greenfield Run and Task Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/runs/{{greenfieldRunId}}",
+            "description": "Use case: refresh run state. Inspect status, tasks (nodeKey/status/attemptCount/outputSummary), audit, and artifacts. Repeat while work is running. In secure mode this requires orchestrator:read."
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Greenfield Artifacts",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved\": true,\n  \"actor\": \"demo-reviewer\",\n  \"note\": \"Generated artifacts and validation evidence reviewed\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs/{{greenfieldRunId}}/artifacts/decision",
+            "description": "Use case: accept the proposal. Send only after Get Greenfield Run reports AWAITING_ARTIFACT_REVIEW. In secure mode this requires orchestrator:approve."
+          },
+          "response": []
+        },
+        {
+          "name": "Export Greenfield Proposal ZIP",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/runs/{{greenfieldRunId}}/artifacts/export",
+            "description": "Use case: download accepted proposal files as a ZIP. Send after artifact acceptance. This does not deploy or install the files. In secure mode this requires orchestrator:read."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Brownfield: Enhance Existing Code",
+      "description": "Demo an enhancement against a bounded caller-supplied read-only source snapshot. The revision is caller-declared and is not verified against Git.",
+      "item": [
+        {
+          "name": "Create Brownfield Run with Snapshot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Run created', function () { pm.response.to.have.status(201); });",
+                  "const data = pm.response.json();",
+                  "pm.collectionVariables.set('brownfieldRunId', data.id);",
+                  "pm.test('Brownfield scenario stored', function () { pm.expect(data.scenario).to.eql('BROWNFIELD'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requirement\": \"Add click analytics without changing existing redirect behavior or storing visitor IPs\",\n  \"scenario\": \"BROWNFIELD\",\n  \"snapshotRevision\": \"working-tree:demo\",\n  \"codebaseContext\": \"Existing redirects return HTTP 302. Link rows are stored in PostgreSQL.\",\n  \"codebaseSnapshot\": [\n    {\n      \"path\": \"src/main/java/LinkService.java\",\n      \"content\": \"class LinkService { /* replace with a reviewed source excerpt */ }\"\n    },\n    {\n      \"path\": \"src/test/java/LinkServiceTest.java\",\n      \"content\": \"class LinkServiceTest { /* replace with relevant regression tests */ }\"\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs",
+            "description": "Use case: request an enhancement/refactor/bug fix with existing-code context. Replace example content with reviewed, non-secret source excerpts. Maximum 25 files and 120,000 combined bytes. This creates a run only; approve its plan separately."
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Brownfield Plan",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved\": true,\n  \"actor\": \"demo-reviewer\",\n  \"note\": \"Brownfield impact plan reviewed\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs/{{brownfieldRunId}}/decision",
+            "description": "Use case: approve the proposed plan after checking the snapshot revision and candidate impacted files. In secure mode this requires orchestrator:approve."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Brownfield Run Status and Evidence",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/runs/{{brownfieldRunId}}",
+            "description": "Use case: inspect task progress, caller-declared revision, codebase analysis, compatibility checklist, validation evidence, and audit events. Repeat until AWAITING_ARTIFACT_REVIEW or FAILED."
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Brownfield Artifacts",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved\": true,\n  \"actor\": \"demo-reviewer\",\n  \"note\": \"Compatibility evidence reviewed\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs/{{brownfieldRunId}}/artifacts/decision",
+            "description": "Use case: accept the proposal only after the run is AWAITING_ARTIFACT_REVIEW and a person has checked compatibility evidence."
+          },
+          "response": []
+        },
+        {
+          "name": "Export Brownfield Proposal ZIP",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/runs/{{brownfieldRunId}}/artifacts/export",
+            "description": "Use case: download accepted changes for separate application/review. Export does not patch a repository or deploy a service."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - Ambiguous Requirement: Clarification Flow",
+      "description": "Demo pausing a run to request missing decisions, then resuming after an answer is submitted.",
+      "item": [
+        {
+          "name": "Create Ambiguous Run",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Run created', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('ambiguousRunId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requirement\": \"Add expiring links; decide what omitted expiry and past dates mean, and whether expired codes may be reused\",\n  \"scenario\": \"AMBIGUOUS\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs",
+            "description": "Use case: start when product policy is unclear. New run waits for plan approval first."
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Ambiguous Run Plan",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved\": true,\n  \"actor\": \"demo-reviewer\",\n  \"note\": \"Clarification plan approved\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs/{{ambiguousRunId}}/decision",
+            "description": "Approve the plan so the workflow can create clarification questions."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Ambiguous Run Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/runs/{{ambiguousRunId}}",
+            "description": "Use case: find the clarification artifact/questions. Wait until status is AWAITING_CLARIFICATION before submitting answers."
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Clarification Answer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": \"Omitted expiry means no expiry; timestamps use UTC; reject dates in the past; expired codes remain reserved.\",\n  \"actor\": \"product-owner\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs/{{ambiguousRunId}}/clarification",
+            "description": "Use case: resume an ambiguous workflow. Send only while status is AWAITING_CLARIFICATION."
+          },
+          "response": []
+        },
+        {
+          "name": "Check Ambiguous Run After Answer",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/runs/{{ambiguousRunId}}",
+            "description": "Use case: verify the clarification was stored and downstream tasks resumed."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 - Replan After Failure or Requirement Change",
+      "description": "Optional demo flow. Create and approve a run, then use this only if the run is in a state where replanning is allowed.",
+      "item": [
+        {
+          "name": "Create Run for Replan Demo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Run created', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('replanRunId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requirement\": \"Create a small URL shortener\",\n  \"scenario\": \"GREENFIELD\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs",
+            "description": "Use case: seed an optional replan demo. Approve its plan and allow it to fail or reach an allowed state before trying the replan request."
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Replan Demo Plan",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved\": true,\n  \"actor\": \"demo-reviewer\",\n  \"note\": \"Initial plan approved\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs/{{replanRunId}}/decision",
+            "description": "Use case: approve the initial plan for the optional replan demo. Alternatively, demonstrate replan before approving while the run is AWAITING_APPROVAL."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Replan Demo Run",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/runs/{{replanRunId}}",
+            "description": "Use case: inspect current state and failure details before revising the requirement."
+          },
+          "response": []
+        },
+        {
+          "name": "Replan Requirement",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requirement\": \"Add link expiration, preserve existing redirect behavior, and include regression tests\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs/{{replanRunId}}/replan",
+            "description": "Use case: replace the plan after an allowed failure or change. It increments planVersion, retains original requirement/audit lineage, discards stale proposals, and requires a new approval. The API rejects replanning during execution or artifact review."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

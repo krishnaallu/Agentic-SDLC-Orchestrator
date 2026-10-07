@@ -212,3 +212,4 @@ docker run --rm -v "${PWD}:/src" ghcr.io/google/osv-scanner:v2.6.0 scan source -
 - [Requirement traceability and known boundaries](docs/traceability.md)
 - [Architecture and trust boundaries](docs/architecture.md)
 - [Operations, monitoring, and deployment runbook](docs/runbook.md)
+- [Postman demo collection and use cases](postman/README.md)
