@@ -1,6 +1,6 @@
 package com.example.orchestrator.workflow;
 
-import com.example.orchestrator.run.TaskBlueprint;
+import com.example.orchestrator.domain.TaskBlueprint;
 import io.temporal.activity.ActivityInterface;
 import io.temporal.activity.ActivityMethod;
 

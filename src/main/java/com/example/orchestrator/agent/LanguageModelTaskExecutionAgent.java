@@ -1,15 +1,15 @@
 package com.example.orchestrator.agent;
 
-import com.example.orchestrator.run.ArtifactDraft;
-import com.example.orchestrator.run.RunScenario;
-import com.example.orchestrator.run.TaskBlueprint;
-import com.example.orchestrator.run.TaskExecutionAgent;
+import com.example.orchestrator.application.ArtifactDraft;
+import com.example.orchestrator.application.TaskExecutionAgent;
+import com.example.orchestrator.domain.RunScenario;
+import com.example.orchestrator.domain.TaskBlueprint;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.context.annotation.Primary;
-import com.example.orchestrator.run.TemplateTaskExecutionAgent;
+import com.example.orchestrator.agent.TemplateTaskExecutionAgent;
 import com.example.orchestrator.workflow.OrchestrationTaskStateService;
 
 import java.util.ArrayList;

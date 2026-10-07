@@ -1,16 +1,17 @@
 package com.example.orchestrator.workflow;
 
-import com.example.orchestrator.run.ArtifactDraft;
-import com.example.orchestrator.run.ArtifactStatus;
-import com.example.orchestrator.run.AuditEvent;
-import com.example.orchestrator.run.AuditEventRepository;
-import com.example.orchestrator.run.OrchestrationArtifact;
-import com.example.orchestrator.run.OrchestrationArtifactRepository;
-import com.example.orchestrator.run.OrchestrationRun;
-import com.example.orchestrator.run.OrchestrationRunRepository;
-import com.example.orchestrator.run.OrchestrationTask;
-import com.example.orchestrator.run.TaskBlueprint;
-import com.example.orchestrator.run.TaskStatus;
+import com.example.orchestrator.application.ArtifactDraft;
+import com.example.orchestrator.domain.ArtifactStatus;
+import com.example.orchestrator.domain.RunStatus;
+import com.example.orchestrator.domain.TaskBlueprint;
+import com.example.orchestrator.domain.TaskStatus;
+import com.example.orchestrator.persistence.AuditEvent;
+import com.example.orchestrator.persistence.AuditEventRepository;
+import com.example.orchestrator.persistence.OrchestrationArtifact;
+import com.example.orchestrator.persistence.OrchestrationArtifactRepository;
+import com.example.orchestrator.persistence.OrchestrationRun;
+import com.example.orchestrator.persistence.OrchestrationRunRepository;
+import com.example.orchestrator.persistence.OrchestrationTask;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -65,6 +66,22 @@ public class OrchestrationTaskStateService {
         OrchestrationTask task = findTask(run, taskKey);
         task.markFailed(safeSummary(reason));
         auditRepository.save(event(run, "TASK_ATTEMPT_FAILED", taskKey + ": " + safeSummary(reason)));
+    }
+
+    @Transactional
+    public void recordValidationEvidence(String runId, ArtifactDraft evidence) {
+        OrchestrationRun run = findRun(runId);
+        OrchestrationArtifact existing = artifactRepository.findByRun_IdOrderByPathAsc(run.getId()).stream()
+                .filter(artifact -> artifact.getPath().equals(evidence.path()))
+                .findFirst().orElse(null);
+        if (existing == null) {
+            artifactRepository.save(new OrchestrationArtifact(UUID.randomUUID(), run, "final-validation",
+                    evidence.path(), evidence.mediaType(), evidence.content(), ArtifactStatus.PROPOSED));
+        } else {
+            existing.setContent(evidence.content());
+        }
+        auditRepository.save(event(run, "VALIDATION_EVIDENCE_RECORDED",
+                "Isolated validation report captured with exit evidence"));
     }
 
     @Transactional

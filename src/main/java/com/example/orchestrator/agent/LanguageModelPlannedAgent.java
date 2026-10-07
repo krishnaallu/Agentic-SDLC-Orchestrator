@@ -1,8 +1,8 @@
 package com.example.orchestrator.agent;
 
-import com.example.orchestrator.run.PlannedAgent;
-import com.example.orchestrator.run.RunScenario;
-import com.example.orchestrator.run.TaskBlueprint;
+import com.example.orchestrator.application.PlannedAgent;
+import com.example.orchestrator.domain.RunScenario;
+import com.example.orchestrator.domain.TaskBlueprint;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,8 +20,11 @@ public class LanguageModelPlannedAgent implements PlannedAgent {
     private static final String SYSTEM_PROMPT = """
             You are a cautious software engineering planner. Return only a JSON object with a tasks array.
             Each task has nodeKey, title, description, and dependencies (an array of nodeKey strings).
-            Include explicit requirement analysis, architecture, implementation, tests, documentation, and a release-readiness synchronization gate.
+            Include explicit requirement analysis, architecture, implementation, unit tests, integration-tests, security-review,
+            documentation, deployment-readiness, release-readiness, and final-validation stages.
             Implementation, tests, and documentation should be parallel children of architecture when applicable.
+            integration-tests depends on implementation and tests; security-review depends on architecture and implementation;
+            deployment-readiness synchronizes integration-tests, security-review, and documentation; final-validation depends on release-readiness.
             For AMBIGUOUS scenarios the first nodeKey must be ambiguity-analysis; downstream architecture must depend on it.
             For BROWNFIELD scenarios the first nodeKey must be codebase-analysis; use only supplied codebase context and say when it is insufficient.
             Keep plans to at most 12 nodes. Do not propose destructive actions or execute commands.
@@ -29,11 +32,11 @@ public class LanguageModelPlannedAgent implements PlannedAgent {
 
     private final StructuredAgentClient client;
     private final ObjectMapper objectMapper;
-    private final com.example.orchestrator.run.DeterministicPlanningAgent fallbackAgent;
+    private final DeterministicPlanningAgent fallbackAgent;
     private final OrchestrationTaskStateService taskStateService;
 
     public LanguageModelPlannedAgent(StructuredAgentClient client, ObjectMapper objectMapper,
-                                     com.example.orchestrator.run.DeterministicPlanningAgent fallbackAgent,
+                                     DeterministicPlanningAgent fallbackAgent,
                                      OrchestrationTaskStateService taskStateService) {
         this.client = client;
         this.objectMapper = objectMapper;
@@ -102,7 +105,8 @@ public class LanguageModelPlannedAgent implements PlannedAgent {
         };
         java.util.Map<String, TaskBlueprint> tasks = plan.stream()
                 .collect(java.util.stream.Collectors.toMap(TaskBlueprint::nodeKey, task -> task));
-        for (String required : List.of(entry, "architecture", "implementation", "tests", "documentation", "release-readiness")) {
+        for (String required : List.of(entry, "architecture", "implementation", "tests", "integration-tests",
+            "security-review", "documentation", "deployment-readiness", "release-readiness", "final-validation")) {
             if (!tasks.containsKey(required)) {
                 throw new IllegalStateException("Planner omitted required SDLC node: " + required);
             }
@@ -110,9 +114,13 @@ public class LanguageModelPlannedAgent implements PlannedAgent {
         if (!tasks.get("architecture").dependencies().contains(entry)
                 || !tasks.get("implementation").dependencies().contains("architecture")
                 || !tasks.get("tests").dependencies().contains("architecture")
+                || !tasks.get("integration-tests").dependencies().containsAll(List.of("implementation", "tests"))
+                || !tasks.get("security-review").dependencies().containsAll(List.of("architecture", "implementation"))
                 || !tasks.get("documentation").dependencies().contains("architecture")
-                || !tasks.get("release-readiness").dependencies()
-                        .containsAll(List.of("implementation", "tests", "documentation"))) {
+                || !tasks.get("deployment-readiness").dependencies()
+                    .containsAll(List.of("integration-tests", "security-review", "documentation"))
+                || !tasks.get("release-readiness").dependencies().contains("deployment-readiness")
+                || !tasks.get("final-validation").dependencies().contains("release-readiness")) {
             throw new IllegalStateException("Planner bypassed a required SDLC dependency gate");
         }
     }

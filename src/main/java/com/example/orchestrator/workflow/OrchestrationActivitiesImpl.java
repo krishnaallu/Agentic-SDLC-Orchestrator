@@ -1,6 +1,6 @@
 package com.example.orchestrator.workflow;
 
-import com.example.orchestrator.run.TaskBlueprint;
+import com.example.orchestrator.domain.TaskBlueprint;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

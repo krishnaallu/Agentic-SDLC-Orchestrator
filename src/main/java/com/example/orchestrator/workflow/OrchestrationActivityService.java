@@ -1,16 +1,16 @@
 package com.example.orchestrator.workflow;
 
-import com.example.orchestrator.run.ArtifactDraft;
-import com.example.orchestrator.run.ArtifactStatus;
-import com.example.orchestrator.run.AuditEvent;
-import com.example.orchestrator.run.AuditEventRepository;
-import com.example.orchestrator.run.OrchestrationArtifact;
-import com.example.orchestrator.run.OrchestrationArtifactRepository;
-import com.example.orchestrator.run.OrchestrationRun;
-import com.example.orchestrator.run.OrchestrationRunRepository;
-import com.example.orchestrator.run.RunStatus;
-import com.example.orchestrator.run.TaskBlueprint;
-import com.example.orchestrator.run.TaskExecutionAgent;
+import com.example.orchestrator.application.ArtifactDraft;
+import com.example.orchestrator.application.TaskExecutionAgent;
+import com.example.orchestrator.domain.ArtifactStatus;
+import com.example.orchestrator.domain.RunStatus;
+import com.example.orchestrator.domain.TaskBlueprint;
+import com.example.orchestrator.persistence.AuditEvent;
+import com.example.orchestrator.persistence.AuditEventRepository;
+import com.example.orchestrator.persistence.OrchestrationArtifact;
+import com.example.orchestrator.persistence.OrchestrationArtifactRepository;
+import com.example.orchestrator.persistence.OrchestrationRun;
+import com.example.orchestrator.persistence.OrchestrationRunRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +28,8 @@ public class OrchestrationActivityService {
     private static final int MAX_ARTIFACT_CHARACTERS = 100_000;
     private static final String ARTIFACT_ROOT = "generated/url-shortener/";
         private static final Set<String> ALLOWED_MEDIA_TYPES = Set.of(
-            "text/x-java-source", "text/markdown", "text/plain", "application/xml", "application/json", "text/yaml");
+                "text/x-java-source", "text/markdown", "text/plain", "application/xml", "application/json", "text/yaml",
+                "text/x-dockerfile");
 
     private final OrchestrationRunRepository runRepository;
     private final AuditEventRepository auditRepository;
@@ -36,19 +37,22 @@ public class OrchestrationActivityService {
     private final TaskExecutionAgent taskExecutionAgent;
     private final OrchestrationTaskStateService taskStateService;
     private final ProposalValidator proposalValidator;
+    private final IsolatedProjectValidator isolatedProjectValidator;
 
     public OrchestrationActivityService(OrchestrationRunRepository runRepository,
                                         AuditEventRepository auditRepository,
                                         OrchestrationArtifactRepository artifactRepository,
                                         TaskExecutionAgent taskExecutionAgent,
                                         OrchestrationTaskStateService taskStateService,
-                                        ProposalValidator proposalValidator) {
+                                        ProposalValidator proposalValidator,
+                                        IsolatedProjectValidator isolatedProjectValidator) {
         this.runRepository = runRepository;
         this.auditRepository = auditRepository;
         this.artifactRepository = artifactRepository;
         this.taskExecutionAgent = taskExecutionAgent;
         this.taskStateService = taskStateService;
         this.proposalValidator = proposalValidator;
+        this.isolatedProjectValidator = isolatedProjectValidator;
     }
 
     @Transactional(readOnly = true)
@@ -89,12 +93,21 @@ public class OrchestrationActivityService {
                     List<ArtifactDraft> drafts = taskExecutionAgent.execute(UUID.fromString(context.runId()), context.requirement(), context.codebaseContext(),
                         context.clarificationNotes(), context.scenario(), context.blueprint());
             validateArtifacts(drafts);
-                    if (taskKey.equals("release-readiness")) {
+                    if (taskKey.equals("final-validation")) {
                         ProposalValidationResult result = proposalValidator.validate(UUID.fromString(runId), drafts);
+                        ProjectExecutionResult execution = isolatedProjectValidator.validate(UUID.fromString(runId), drafts);
                         drafts = new java.util.ArrayList<>(drafts);
-                        drafts.add(new ArtifactDraft("generated/url-shortener/validation-report.md", "text/markdown", result.report()));
-                        if (!result.passed()) {
-                            throw new IllegalStateException("Proposal failed static release-readiness validation");
+                        String report = result.report() + "\n## Isolated build and test execution\n\n"
+                                + execution.summary() + "\n";
+                        ArtifactDraft evidence = new ArtifactDraft(
+                            "generated/url-shortener/validation-report.md", "text/markdown", report);
+                        drafts.add(evidence);
+                        if (!result.passed() || (isolatedProjectValidator.required() && !execution.executed())
+                            || (execution.executed() && !execution.passed())) {
+                            taskStateService.recordValidationEvidence(runId, evidence);
+                                int reportStart = Math.max(0, report.length() - 12000);
+                            throw new IllegalStateException("Proposal validation failed; see validation report: "
+                                    + report.substring(reportStart));
                         }
                     }
             taskStateService.completeTask(runId, taskKey, drafts);
@@ -160,14 +173,19 @@ public class OrchestrationActivityService {
         }
         Set<String> paths = new HashSet<>();
         for (ArtifactDraft draft : drafts) {
+            boolean duplicatePath = draft.path() != null && paths.contains(draft.path());
+            boolean allowedPath = draft.path() != null && (draft.path().matches("generated/url-shortener/[A-Za-z0-9._/-]+")
+                    || draft.path().equals(ARTIFACT_ROOT + "Dockerfile"));
             if (draft.path() == null || !draft.path().startsWith(ARTIFACT_ROOT)
                     || draft.path().contains("..") || draft.path().contains("\\")
-                    || !draft.path().matches("generated/url-shortener/[A-Za-z0-9._/-]+")
-                    || !paths.add(draft.path())
+                    || !allowedPath || duplicatePath
                     || !ALLOWED_MEDIA_TYPES.contains(draft.mediaType())
                     || draft.content() == null || draft.content().length() > MAX_ARTIFACT_CHARACTERS) {
-                throw new IllegalArgumentException("Agent returned an artifact outside the allowed scope");
+                throw new IllegalArgumentException("Agent artifact rejected by policy: path=" + draft.path()
+                        + ", mediaType=" + draft.mediaType() + ", duplicate=" + duplicatePath
+                        + ", allowedPath=" + allowedPath);
             }
+            paths.add(draft.path());
         }
     }
 

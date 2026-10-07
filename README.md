@@ -1,134 +1,214 @@
-# Agentic Engineering Orchestrator
+# Engineering Orchestrator
 
-Java 21 / Spring Boot service that turns an engineering requirement into a durable, reviewable workflow and proposed code artifacts. The URL shortener is the sample requirement sent to the orchestrator; this project is the orchestrator, not the generated URL-shortener application.
+## What This App Does
 
-## Implemented behavior
+This application helps turn a software request into a reviewed engineering proposal. You describe what you want built or changed; the orchestrator creates a plan, asks for approval, prepares proposed files and checks them in an isolated environment, then lets a person review the results.
 
-- Persist run inputs, scenario, plan version, dependency graph, node state, attempt counts, artifacts, human decisions, and audit events in PostgreSQL.
-- Execute a durable Temporal workflow with ready DAG nodes scheduled concurrently and synchronization at dependent nodes.
-- Pause before execution for plan approval; reject decisions after the decision is recorded.
-- Pause ambiguous runs after the clarification node, store the human answer, then continue downstream tasks.
-- Generate deterministic URL-shortener Java source, API, tests, and documentation proposals without requiring model credentials.
-- Optionally use an OpenAI-compatible structured-output provider for planning and artifact generation.
-- Restrict proposed files to an isolated path namespace, allowed media types, at most 12 artifacts per task, and 100,000 characters per artifact. No generated shell command is executed and no artifact is written into this repository.
-- Pause after generation for a separate human artifact review. Only accepted artifacts can be exported as a ZIP; rejection marks proposals unusable and records rollback lineage.
-- Use Temporal bounded retries (three attempts, exponential backoff) and persist task failure and run safe-stop state.
-- Fall back to deterministic templates if the optional model provider fails or returns invalid structured content; record fallback usage in the run audit trail without persisting provider response/error bodies.
-- Run static release-readiness checks for required proposal files, HTTP(S) destination validation, unsafe execution/raw-IP patterns, and artifact path boundaries; persist a validation report.
-- Re-plan changed requirements with a new plan version, retain the original request and audit lineage, discard stale proposals, and require new approval.
-- Reconcile pending persisted Temporal state after transient workflow-service failures.
-- Provide greenfield, brownfield, and ambiguous scenario presets plus reliability metrics.
+**Important:** This repository is the orchestrator. The sample URL-shortener is a proposed project created by the orchestrator. It is not a separate, running URL-shortener service, and approved files are exported as a ZIP rather than installed into another project.
 
-This is an assignment prototype, not production-certified software. Production use still needs security review, authentication/authorization, provider-specific integration/load testing, deployment hardening, database backup/restore testing, privacy review, and operational SLOs. Model output remains untrusted and must be human-reviewed.
+## What Is Implemented
 
-## Requirements
+| Requirement area | What the orchestrator does | Boundary to keep in mind |
+|---|---|---|
+| Clear code boundaries | Keeps API, application logic, agents, domain types, persistence, configuration, security, and workflow code in separate packages. | The URL-shortener's package layout is generated proposal content, not this app's runtime code. |
+| Approval security | The `secure` profile checks signed JWTs and requires different scopes for reading, changing, approving, and operations. Audit decisions use the JWT subject. | By default, the `local` profile disables authentication and binds to this computer only. Never expose it to a network. |
+| Request controls | Limits request size and applies a per-process, per-peer request rate limit to run APIs. | Limits are not shared across multiple app instances. |
+| URL destination safety | The generated URL-shortener proposal includes checks for unsafe schemes, private and local addresses, and common metadata hostnames. | These checks are in generated code. They are not running as a URL-shortener service here; DNS-rebinding protection needs additional production design and review. |
+| Brownfield changes | Accepts a bounded set of caller-supplied source files, records a caller-declared revision, and creates candidate impacted-file and compatibility-check documents. | It does not read a Git repository itself or verify the revision. The impact list and regression checklist need engineering review. |
+| Safe proposal testing | Runs generated project builds and tests in a disposable Docker container with networking disabled, resource limits, read-only source and dependency-cache mounts, and bounded time/output. | The generated files are not applied to a live service or this repository. Docker and the needed Maven dependencies must be available. |
+| Workflow gates | Includes plan approval, clarification when needed, implementation and test planning, integration-test, security-review, deployment-readiness, release-readiness, final-validation, and artifact-review stages. | Some review stages create evidence for a person to inspect; they are not an automated security certification. |
+| Persistence and recovery | Stores runs, plans, tasks, approvals, artifacts, and audit history in PostgreSQL. Temporal coordinates durable workflow progress and retries. | The included Temporal server is for local development and is not a production deployment. |
+| Verification and operations | Includes PostgreSQL integration tests, API/security tests, concurrency tests, Prometheus metrics, an OSV dependency scan, and operating guidance. | Metrics are not production SLOs. Backup/restore drills, alerting, and production deployment still need to be set up. |
 
-- Java 21 or later
-- Maven 3.9 or use the included Maven wrapper
-- Docker Desktop with Docker Compose for PostgreSQL and Temporal local services
+The full evidence and remaining boundaries are in [Requirement Traceability](docs/traceability.md), [Architecture](docs/architecture.md), and the [Operations Runbook](docs/runbook.md).
 
-## Start the services
+## Start It Locally
+
+Prerequisites: Java 21 or newer, Docker Desktop, and PowerShell. PostgreSQL and Temporal are provided by Docker Compose.
+
+From the repository directory, start the dependencies:
 
 ```powershell
 docker compose up -d postgres temporal
-mvn spring-boot:run
 ```
 
-The Spring API listens on port `8080`. Temporal's development UI is on port `8233`. Health is at `/actuator/health`; Prometheus metrics are at `/actuator/prometheus`. PostgreSQL settings can be overridden with `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD`. Temporal settings can be overridden with `TEMPORAL_TARGET` and `TEMPORAL_TASK_QUEUE`.
-
-Run tests without Docker:
+Then start Spring Boot:
 
 ```powershell
-mvn test
+.\mvnw.cmd spring-boot:run
 ```
 
-The test profile uses H2 and Temporal's in-memory test server. Production-shaped local startup uses PostgreSQL migrations managed by Flyway and a Temporal dev server. Do not set Hibernate schema generation to `create` or `update` for a production profile.
+The default profile is `local`: authentication is off and the app listens only on `127.0.0.1:8080`. It is intended for local development only. Keep the terminal running while using the app. Temporal's local web UI is at `http://localhost:8233`.
 
-## Agent provider
-
-The deterministic template provider is the default and requires no credentials. To enable an OpenAI-compatible provider, configure environment variables before starting Spring:
+Check that the app is healthy and list the available scenario examples:
 
 ```powershell
-$env:ORCHESTRATOR_AGENT_PROVIDER = 'openai-compatible'
-$env:ORCHESTRATOR_AGENT_API_KEY = '<set locally; do not commit>'
-$env:ORCHESTRATOR_AGENT_BASE_URL = 'https://api.openai.com/v1'
-$env:ORCHESTRATOR_AGENT_MODEL = 'gpt-4.1-mini'
-mvn spring-boot:run
+Invoke-RestMethod http://127.0.0.1:8080/actuator/health
+Invoke-RestMethod http://127.0.0.1:8080/api/v1/scenarios
 ```
 
-Use a compatible provider's base URL/model as appropriate. Credentials are not stored in the database or source. The provider must support structured JSON responses. Requests have bounded connect/read timeouts; malformed/oversized JSON and unsafe artifact paths fail closed. User requirements and brownfield context are passed as untrusted data, not system instructions.
+To stop the app, press `Ctrl+C` in the terminal where Maven is running. Stop the supporting containers later with `docker compose down` (this keeps the PostgreSQL data volume).
 
-## API walkthrough
+## Start Secure Mode
 
-List the three scenario examples:
+For a deployment that uses an identity provider, set its real issuer URL and explicitly select the `secure` profile:
 
 ```powershell
-Invoke-RestMethod -Method Get -Uri http://localhost:8080/api/v1/scenarios
+$env:AUTH_ISSUER_URI = 'https://your-real-identity-provider/issuer'
+.\mvnw.cmd '-Dspring-boot.run.profiles=secure' spring-boot:run
 ```
 
-Create a greenfield requirement run:
+Secure mode requires signed JWTs. The token must contain these scopes for the corresponding actions:
+
+- `orchestrator:write`: create or replan a run, or submit clarification.
+- `orchestrator:read`: inspect runs and export approved artifacts.
+- `orchestrator:approve`: approve or reject plans and artifacts.
+- `orchestrator:ops`: view reliability and Prometheus metrics.
+
+Do not use the `local` profile outside your own computer. More deployment cautions are in the [runbook](docs/runbook.md).
+
+## Submit A Requirement
+
+In a second PowerShell terminal, choose a scenario and submit the requirement. This example starts a new Greenfield project:
 
 ```powershell
-$run = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/runs `
+$request = @{
+  requirement = 'Build a URL shortener with expiring links, safe redirects, and click analytics'
+  scenario = 'GREENFIELD'
+} | ConvertTo-Json
+
+$run = Invoke-RestMethod -Method Post `
+  -Uri 'http://127.0.0.1:8080/api/v1/runs' `
   -ContentType 'application/json' `
-  -Body '{"requirement":"Build a URL shortener with expiring links, safe redirects, and click analytics","scenario":"GREENFIELD"}'
-$run
+  -Body $request
+
+$run | Select-Object id, scenario, status, planVersion
 ```
 
-The initial response includes a run ID, plan version, graph, and `AWAITING_APPROVAL` status. Inspect it at `GET /api/v1/runs/{runId}`. Approve or reject the plan:
+Keep the run `id`; it is how you check progress later. New runs normally wait at `AWAITING_APPROVAL` before work begins.
+
+Approve the plan in local mode:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/runs/$($run.id)/decision" `
+$runId = $run.id
+$decision = @{
+  approved = $true
+  actor = 'local-user'
+  note = 'Plan reviewed'
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post `
+  -Uri "http://127.0.0.1:8080/api/v1/runs/$runId/decision" `
   -ContentType 'application/json' `
-  -Body '{"approved":true,"actor":"reviewer","note":"Plan reviewed"}'
+  -Body $decision
 ```
 
-The Temporal workflow then executes independent tasks concurrently. For an ambiguous run, the workflow pauses with `AWAITING_CLARIFICATION` after producing its question artifact. Submit the human answer:
+In secure mode, include an `Authorization: Bearer ...` header with a token that has the required scope. The recorded actor is taken from that token, not the JSON `actor` value.
+
+## Check Run Progress
+
+Fetch the run whenever you want an updated status:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/runs/$($run.id)/clarification" `
+$current = Invoke-RestMethod "http://127.0.0.1:8080/api/v1/runs/$runId"
+$current | Select-Object id, status, failureReason
+$current.tasks | Select-Object nodeKey, status, attemptCount, outputSummary | Format-Table
+```
+
+The run response also contains `artifacts` and `audit` history:
+
+```powershell
+$current.artifacts | Select-Object taskKey, path, status
+$current.audit | Select-Object action, actor, happenedAt, details | Format-Table -Wrap
+```
+
+Typical run statuses:
+
+- `AWAITING_APPROVAL`: waiting for a person to approve the plan.
+- `RUNNING`: workflow stages are being processed.
+- `AWAITING_CLARIFICATION`: a requirement question needs an answer.
+- `AWAITING_ARTIFACT_REVIEW`: proposed files and validation evidence are ready for review.
+- `COMPLETED`: artifacts were accepted; they can be exported.
+- `FAILED`: a required workflow or validation stage failed. Inspect `failureReason`, tasks, and the validation report before replanning.
+
+Each task has its own status (`PLANNED`, `RUNNING`, `SUCCEEDED`, or `FAILED`) and attempt count. The API does not currently provide a list-all-runs endpoint, so keep each run ID.
+
+If clarification is requested, submit the answer:
+
+```powershell
+$answer = @{ answers = 'Omitted expiry means no expiry; reject past dates.'; actor = 'local-user' } | ConvertTo-Json
+Invoke-RestMethod -Method Post `
+  -Uri "http://127.0.0.1:8080/api/v1/runs/$runId/clarification" `
   -ContentType 'application/json' `
-  -Body '{"answers":"Omitted expiry means no expiry; reject past dates; short codes are never reused.","actor":"product-owner"}'
+  -Body $answer
 ```
 
-After the graph runs, inspect the generated artifact content and `AWAITING_ARTIFACT_REVIEW` status. Accept or reject the proposal with `POST /api/v1/runs/{runId}/artifacts/decision`:
+## Review And Export
+
+When a run reaches `AWAITING_ARTIFACT_REVIEW`, inspect the artifacts and validation report. Accept or reject the proposal:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/runs/$($run.id)/artifacts/decision" `
+$review = @{ approved = $true; actor = 'local-user'; note = 'Artifacts reviewed' } | ConvertTo-Json
+Invoke-RestMethod -Method Post `
+  -Uri "http://127.0.0.1:8080/api/v1/runs/$runId/artifacts/decision" `
   -ContentType 'application/json' `
-  -Body '{"approved":true,"actor":"reviewer","note":"Reviewed proposal and tests"}'
+  -Body $review
 ```
 
-Only then can the archive be retrieved:
+After accepting, download the proposed files as a ZIP:
 
 ```powershell
-Invoke-WebRequest -Uri "http://localhost:8080/api/v1/runs/$($run.id)/artifacts/export" -OutFile .\approved-url-shortener.zip
+Invoke-WebRequest `
+  -Uri "http://127.0.0.1:8080/api/v1/runs/$runId/artifacts/export" `
+  -OutFile '.\approved-proposal.zip'
 ```
 
-The archive contains proposals only. This endpoint does not apply files to the orchestrator workspace or run generated code.
+Export does not install or deploy the proposal. Applying it to a real service remains a separate, reviewed step.
 
-### Scenario inputs
+## Choose A Scenario
 
-- `GREENFIELD`: use the supplied URL-shortener example to create a new service.
-- `BROWNFIELD`: create a run with `scenario: "BROWNFIELD"` and a bounded `codebaseContext` string describing existing modules/APIs/data flows. The service does not scan arbitrary local files.
-- `AMBIGUOUS`: submit a request with an unresolved policy detail. The workflow emits clarification questions and waits for the clarification endpoint before downstream work.
+- `GREENFIELD`: propose a new system or feature. The sample is a URL shortener.
+- `BROWNFIELD`: propose a change to existing code. Provide a read-only snapshot and revision so the planner has concrete context. The snapshot can contain at most 25 files and 120 KB total.
+- `AMBIGUOUS`: use when important requirements are unclear. The workflow creates questions and waits for answers before continuing.
 
-Change requirements with `POST /api/v1/runs/{runId}/replan` and `{"requirement":"..."}`. The original requirement and audit trail remain; stale artifacts are discarded, plan version increments, and approval is required again. Re-planning is rejected while execution or artifact review is active.
+Example Brownfield request:
 
-Reliability aggregates are available at `GET /api/v1/runs/metrics/reliability`: run success rate, retries, proposal rollback count, mean failure-to-replan recovery duration, and average end-to-end latency.
+```powershell
+$request = @{
+  requirement = 'Add click analytics without changing existing redirects'
+  scenario = 'BROWNFIELD'
+  snapshotRevision = 'a1b2c3d'
+  codebaseSnapshot = @(
+    @{ path = 'src/main/java/LinkService.java'; content = 'class LinkService { /* reviewed source excerpt */ }' }
+  )
+} | ConvertTo-Json -Depth 5
 
-## Architecture and control flow
+Invoke-RestMethod -Method Post `
+  -Uri 'http://127.0.0.1:8080/api/v1/runs' `
+  -ContentType 'application/json' `
+  -Body $request
+```
 
-`PlannedAgent` and `TaskExecutionAgent` are provider boundaries. The default template adapters make deterministic artifacts; optional language-model adapters return validated JSON. `OrchestrationService` owns plan validation and PostgreSQL run lineage. Temporal owns durable waits, signals, bounded activity retries, and DAG execution. Spring transactional activities write node state, outputs, artifacts, and audit events. A scheduled reconciler retries start/signal delivery from persisted state.
+The revision is declared by the caller; the app does not verify it against Git. It checks snapshot paths and size, rejects likely secret/key files, redacts some secret-like assignments, and treats the content as untrusted text. Brownfield impact and regression checks are candidates for review, not proof that compatibility is preserved.
 
-The DAG stages are requirement/codebase/ambiguity analysis, architecture, parallel implementation/tests/documentation, and release readiness. The two explicit human gates are plan approval and final artifact review. Ambiguous scenarios add a clarification gate. Human acceptance permits ZIP export only; actual application of code remains an explicit operator action outside this service.
+## Run Checks
 
-## Known limitations and trade-offs
+```powershell
+# Unit and API tests
+.\mvnw.cmd -B test
 
-- The included deterministic template output is a credible reproducible demonstration, not a general-purpose code generator. The optional LLM provider needs a configured API key and compatible endpoint.
-- The application accepts bounded user-supplied brownfield context rather than reading arbitrary repositories; no workspace mutation or shell execution is implemented.
-- Task retries are bounded through Temporal activity retry options; there is no automatic code rollback because proposals are never applied. Rejecting a proposal records a logical rollback and prevents export.
-- The in-process Spring worker is suitable for the local prototype. Production should deploy workers independently, add authentication/authorization, restrict Temporal/network access, and use a supported production Temporal cluster.
-- Rate limiting, tenant isolation, secret redaction from provider outputs, model-specific token budgets, and real provider contract/load tests are not yet implemented.
-- Generated tests are proposed and checked for presence but are not compiled or executed. Static checks are not a substitute for running the generated project in an isolated sandbox; no code execution sandbox is implemented yet.
-- Reliability aggregates are computed from persisted runs and audit events. They are demonstrator metrics, not an SLO reporting system.
+# PostgreSQL integration tests; Docker required
+.\mvnw.cmd -B -Pintegration verify
+
+# Run Greenfield and Brownfield generated builds/tests in the isolated Docker sandbox
+.\mvnw.cmd -B '-Dorchestrator.validation.enabled=true' '-Dorchestrator.validation.required=true' '-Dtest=AgenticOrchestratorApplicationTests' test
+
+# Online dependency scan through OSV; no NVD database download
+docker run --rm -v "${PWD}:/src" ghcr.io/google/osv-scanner:v2.6.0 scan source --recursive /src
+```
+
+## Further Reading
+
+- [Requirement traceability and known boundaries](docs/traceability.md)
+- [Architecture and trust boundaries](docs/architecture.md)
+- [Operations, monitoring, and deployment runbook](docs/runbook.md)

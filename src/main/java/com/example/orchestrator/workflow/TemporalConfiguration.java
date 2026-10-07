@@ -1,6 +1,6 @@
 package com.example.orchestrator.workflow;
 
-import com.example.orchestrator.run.OrchestrationProperties;
+import com.example.orchestrator.configuration.OrchestrationProperties;
 import io.temporal.client.WorkflowClient;
 import io.temporal.serviceclient.WorkflowServiceStubs;
 import io.temporal.serviceclient.WorkflowServiceStubsOptions;

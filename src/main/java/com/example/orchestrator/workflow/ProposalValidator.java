@@ -1,8 +1,8 @@
 package com.example.orchestrator.workflow;
 
-import com.example.orchestrator.run.ArtifactDraft;
-import com.example.orchestrator.run.OrchestrationArtifact;
-import com.example.orchestrator.run.OrchestrationArtifactRepository;
+import com.example.orchestrator.application.ArtifactDraft;
+import com.example.orchestrator.persistence.OrchestrationArtifact;
+import com.example.orchestrator.persistence.OrchestrationArtifactRepository;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -14,10 +14,13 @@ public class ProposalValidator {
     private static final String ROOT = "generated/url-shortener/";
     private static final List<String> REQUIRED_SUFFIXES = List.of(
             "LinkService.java", "LinkController.java", "LinkRepository.java", "LinkServiceTest.java", "README.md",
-            "V1__create_short_link.sql");
+            "V1__create_short_link.sql", "DestinationPolicy.java", "SecurityConfiguration.java",
+            "RateLimitFilter.java", "DestinationPolicyTest.java", "LinkControllerSecurityTest.java",
+            "openapi.yaml", "Dockerfile", "compose.yaml",
+            "integration-test-plan.md", "security-review.md", "deployment-readiness.md", "final-engineering-summary.md");
     private static final List<String> FORBIDDEN_MARKERS = List.of(
-            "Runtime.getRuntime()", "new ProcessBuilder", "System.exit(", "getRemoteAddr()",
-            "X-Forwarded-For", "java.net.URLClassLoader");
+            "Runtime.getRuntime()", "new ProcessBuilder", "System.exit(",
+            "java.net.URLClassLoader", "visitor_ip", "client_ip", "ip_address");
 
     private final OrchestrationArtifactRepository artifactRepository;
 
@@ -41,10 +44,37 @@ public class ProposalValidator {
             passed &= exists;
         }
 
-        String service = contentFor(paths, contents, "LinkService.java");
-        boolean validatesHttp = service.contains("Only absolute HTTP(S) URLs are allowed");
-        checks.add((validatesHttp ? "PASS" : "FAIL") + " URL destination policy is enforced");
+        String policy = contentFor(paths, contents, "DestinationPolicy.java");
+        boolean validatesHttp = policy.contains("http\".equalsIgnoreCase(scheme)")
+            && policy.contains("https\".equalsIgnoreCase(scheme)");
+        checks.add((validatesHttp ? "PASS" : "FAIL") + " only absolute HTTP(S) destinations are accepted");
         passed &= validatesHttp;
+
+        boolean blocksPrivateNetworks = policy.contains("isLoopbackAddress")
+            && policy.contains("isLinkLocalAddress") && policy.contains("metadata.google.internal");
+        checks.add((blocksPrivateNetworks ? "PASS" : "FAIL") + " destination policy rejects loopback, link-local, and metadata targets");
+        passed &= blocksPrivateNetworks;
+
+        String rateLimiter = contentFor(paths, contents, "RateLimitFilter.java");
+        boolean hashesPeerAddress = rateLimiter.contains("HmacSHA256")
+            && rateLimiter.contains("getRemoteAddr()")
+            && !rateLimiter.contains("X-Forwarded-For")
+            && rateLimiter.contains("429") && rateLimiter.contains("8192") && rateLimiter.contains("503");
+        checks.add((hashesPeerAddress ? "PASS" : "FAIL") + " rate limiting pseudonymizes direct peer address and ignores untrusted forwarding headers");
+        passed &= hashesPeerAddress;
+
+        boolean hasManagementSecurity = paths.stream().anyMatch(path -> path.endsWith("SecurityConfiguration.java"))
+            && contents.stream().anyMatch(content -> content.contains("SCOPE_links:write")
+                && content.contains("SCOPE_links:read") && content.contains("denyAll()"));
+        checks.add((hasManagementSecurity ? "PASS" : "FAIL") + " management routes require explicit JWT scopes and unknown routes are denied");
+        passed &= hasManagementSecurity;
+
+        String openApi = contentFor(paths, contents, "openapi.yaml");
+        boolean hasApiContract = openApi.contains("openapi: 3.1.0")
+            && openApi.contains("/links/{code}") && openApi.contains("/links/{code}/analytics")
+            && openApi.contains("bearerAuth");
+        checks.add((hasApiContract ? "PASS" : "FAIL") + " OpenAPI contract describes create, redirect, and analytics security");
+        passed &= hasApiContract;
 
         for (String forbidden : FORBIDDEN_MARKERS) {
             boolean absent = contents.stream().noneMatch(content -> content.contains(forbidden));

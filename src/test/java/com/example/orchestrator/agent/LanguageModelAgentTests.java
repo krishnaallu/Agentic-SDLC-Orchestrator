@@ -1,10 +1,11 @@
 package com.example.orchestrator.agent;
 
-import com.example.orchestrator.run.RunScenario;
-import com.example.orchestrator.run.TaskBlueprint;
-import com.example.orchestrator.run.TaskExecutionAgent;
-import com.example.orchestrator.run.TemplateTaskExecutionAgent;
-import com.example.orchestrator.run.DeterministicPlanningAgent;
+import com.example.orchestrator.application.ArtifactDraft;
+import com.example.orchestrator.application.TaskExecutionAgent;
+import com.example.orchestrator.agent.TemplateTaskExecutionAgent;
+import com.example.orchestrator.agent.DeterministicPlanningAgent;
+import com.example.orchestrator.domain.RunScenario;
+import com.example.orchestrator.domain.TaskBlueprint;
 import com.example.orchestrator.workflow.OrchestrationTaskStateService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -31,8 +32,12 @@ class LanguageModelAgentTests {
                                                                                                         {"nodeKey":"architecture","title":"Design","description":"Define contracts","dependencies":["requirement-analysis"]},
                                                                                                         {"nodeKey":"implementation","title":"Implement","description":"Generate proposal","dependencies":["architecture"]},
                                                                                                         {"nodeKey":"tests","title":"Test","description":"Generate tests","dependencies":["architecture"]},
+                                                                                                          {"nodeKey":"integration-tests","title":"Integrate","description":"Run API tests","dependencies":["implementation","tests"]},
+                                                                                                          {"nodeKey":"security-review","title":"Secure","description":"Review policy","dependencies":["architecture","implementation"]},
                                                                                                         {"nodeKey":"documentation","title":"Document","description":"Generate docs","dependencies":["architecture"]},
-                                                                                                        {"nodeKey":"release-readiness","title":"Review","description":"Review proposal","dependencies":["implementation","tests","documentation"]}
+                                                                                                          {"nodeKey":"deployment-readiness","title":"Deploy","description":"Review operations","dependencies":["integration-tests","security-review","documentation"]},
+                                                                                                          {"nodeKey":"release-readiness","title":"Review","description":"Review proposal","dependencies":["deployment-readiness"]},
+                                                                                                          {"nodeKey":"final-validation","title":"Validate","description":"Collect evidence","dependencies":["release-readiness"]}
                         ]}
                         """);
         LanguageModelPlannedAgent agent = new LanguageModelPlannedAgent(client, mapper,
@@ -41,7 +46,8 @@ class LanguageModelAgentTests {
         List<TaskBlueprint> plan = agent.plan(UUID.randomUUID(), "Build it", "", RunScenario.GREENFIELD);
 
         assertThat(plan).extracting(TaskBlueprint::nodeKey).containsExactly("requirement-analysis", "architecture",
-                "implementation", "tests", "documentation", "release-readiness");
+                "implementation", "tests", "integration-tests", "security-review", "documentation",
+                "deployment-readiness", "release-readiness", "final-validation");
     }
 
     @Test
@@ -69,7 +75,7 @@ class LanguageModelAgentTests {
                 new TemplateTaskExecutionAgent(), stateService);
 
         UUID runId = UUID.randomUUID();
-        List<com.example.orchestrator.run.ArtifactDraft> fallback = agent.execute(runId, "Build a service", "", "",
+        List<ArtifactDraft> fallback = agent.execute(runId, "Build a service", "", "",
                 RunScenario.GREENFIELD, new TaskBlueprint("implementation", "Implement", "Generate code", List.of()));
 
         assertThat(fallback).isNotEmpty().allSatisfy(artifact ->
@@ -86,7 +92,7 @@ class LanguageModelAgentTests {
         TaskExecutionAgent agent = new LanguageModelTaskExecutionAgent(client, mapper,
                 new TemplateTaskExecutionAgent(), stateService);
 
-        List<com.example.orchestrator.run.ArtifactDraft> artifacts = agent.execute(UUID.randomUUID(), "Build a service", "", "",
+        List<ArtifactDraft> artifacts = agent.execute(UUID.randomUUID(), "Build a service", "", "",
                 RunScenario.GREENFIELD, new TaskBlueprint("implementation", "Implement", "Generate code", List.of()));
 
         assertThat(artifacts).singleElement().extracting("path")
