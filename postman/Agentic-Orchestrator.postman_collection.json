@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "f1dc8a44-6a41-4c51-9b01-72a2766c90fb",
     "name": "Agentic Engineering Orchestrator",
-    "description": "Demo collection for the local loopback-only orchestrator. Start PostgreSQL and Temporal, then run the Spring app before sending requests. The collection is organized by use case. Requests that depend on a workflow state must be sent only when the status shown in Get Run says the required state. Local profile requires no token. In secure profile, set accessToken in the selected environment. This orchestrator generates and validates proposals; it does not deploy or apply them to another service.",
+    "description": "Demo collection for the local loopback-only orchestrator. The deterministic provider generates the URL-shortener sample; configure ORCHESTRATOR_AGENT_PROVIDER=openai-compatible and its API key for other domains such as inventory. Start PostgreSQL and Temporal, then run Spring before sending requests. Local profile needs no token. Secure profile needs accessToken. This orchestrator generates and validates proposals; it does not deploy them.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -12,6 +12,7 @@
   "variable": [
     { "key": "baseUrl", "value": "http://127.0.0.1:8080", "type": "string" },
     { "key": "greenfieldRunId", "value": "", "type": "string" },
+    { "key": "genericRunId", "value": "", "type": "string" },
     { "key": "brownfieldRunId", "value": "", "type": "string" },
     { "key": "ambiguousRunId", "value": "", "type": "string" },
     { "key": "replanRunId", "value": "", "type": "string" }
@@ -60,6 +61,33 @@
             "description": "Use case: scrape application metrics. In secure profile this requires orchestrator:ops. In local profile it is available without a token."
           },
           "response": []
+        },
+        {
+          "name": "Inventory Without Model Provider (Expected 422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Deterministic-only mode rejects unsupported domain before a run is created', function () { pm.response.to.have.status(422); });",
+                  "pm.test('Response explains current generator scope', function () { pm.expect(pm.response.text()).to.include('URL-shortener'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requirement\": \"Build an inventory service with products and stock adjustments\",\n  \"scenario\": \"GREENFIELD\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/runs",
+            "description": "Use case: demonstrate safe rejection when ORCHESTRATOR_AGENT_PROVIDER is not openai-compatible. Expected response is 422; no run is created. With the model provider enabled, use the Generic Inventory Service folder instead."
+          },
+          "response": []
         }
       ]
     },
@@ -88,7 +116,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"requirement\": \"Build an inventory service with products, stock adjustments, and a REST API\",\n  \"scenario\": \"GREENFIELD\"\n}",
+              "raw": "{\n  \"requirement\": \"Build a URL shortener with expiring links, safe redirects, and click analytics\",\n  \"scenario\": \"GREENFIELD\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/runs",
@@ -143,6 +171,70 @@
             "header": [],
             "url": "{{baseUrl}}/api/v1/runs/{{greenfieldRunId}}/artifacts/export",
             "description": "Use case: download accepted proposal files as a ZIP. Send after artifact acceptance. This does not deploy or install the files. In secure mode this requires orchestrator:read."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01B - Generic Greenfield: Inventory Service (Model Provider Required)",
+      "description": "This flow requires ORCHESTRATOR_AGENT_PROVIDER=openai-compatible, a valid provider API key, base URL, and model configured before Spring Boot starts.",
+      "item": [
+        {
+          "name": "Create Inventory Service Run",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Run created', function () { pm.response.to.have.status(201); });",
+            "const data = pm.response.json(); pm.collectionVariables.set('genericRunId', data.id);",
+            "pm.test('Inventory requirement preserved', function () { pm.expect(data.requirement.toLowerCase()).to.include('inventory'); });"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"requirement\": \"Build an inventory service with product catalog, stock adjustments, and a REST API\",\n  \"scenario\": \"GREENFIELD\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/runs",
+            "description": "Use case: create a generic inventory-service plan. A configured model provider is required; without it, deterministic mode correctly returns HTTP 422."
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Inventory Plan",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"approved\": true,\n  \"actor\": \"demo-reviewer\",\n  \"note\": \"Inventory plan reviewed\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/runs/{{genericRunId}}/decision",
+            "description": "Approve only after reviewing the returned inventory plan. Secure mode requires orchestrator:approve."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Inventory Run and Tasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/runs/{{genericRunId}}",
+            "description": "Poll tasks and inspect generated inventory artifacts plus validation-report.md. Secure mode requires orchestrator:read."
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Inventory Artifacts",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"approved\": true,\n  \"actor\": \"demo-reviewer\",\n  \"note\": \"Inventory artifacts and test evidence reviewed\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/runs/{{genericRunId}}/artifacts/decision",
+            "description": "Send only when status is AWAITING_ARTIFACT_REVIEW. Review the domain-specific files and validation evidence first."
+          },
+          "response": []
+        },
+        {
+          "name": "Export Inventory Proposal ZIP",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/runs/{{genericRunId}}/artifacts/export",
+            "description": "Download the accepted inventory proposal. This exports files; it does not deploy them."
           },
           "response": []
         }

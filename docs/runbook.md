@@ -10,6 +10,7 @@ This runbook covers the agentic orchestrator and distinguishes it from the URL-s
 - Set `AUTH_ISSUER_URI` to a trusted OIDC issuer before starting the API. Do not disable JWT validation in deployed environments.
 - Set database credentials through `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD`; use a secret manager outside local development.
 - Configure model provider credentials only when using the optional provider. Do not include secrets in requirements or repository snapshots.
+- For generic Greenfield services, set `ORCHESTRATOR_AGENT_PROVIDER=openai-compatible`, `ORCHESTRATOR_AGENT_API_KEY`, `ORCHESTRATOR_AGENT_BASE_URL`, and `ORCHESTRATOR_AGENT_MODEL` before starting. The built-in deterministic generator is only the URL-shortener sample.
 - Start with `mvn spring-boot:run` or the packaged application. Flyway owns schema changes; keep Hibernate DDL mode at `validate`.
 
 ## Authorization and limits

@@ -21,6 +21,7 @@ import com.example.orchestrator.persistence.OrchestrationRunRepository;
 import com.example.orchestrator.persistence.OrchestrationTask;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +46,8 @@ public class OrchestrationService {
     private final OrchestrationArtifactRepository artifactRepository;
     private final OrchestrationActivityService activityService;
     private final CodebaseSnapshotNormalizer codebaseSnapshotNormalizer;
+    private final SupportedRequirementPolicy supportedRequirementPolicy;
+    private final boolean genericProviderEnabled;
 
     public OrchestrationService(OrchestrationRunRepository runRepository,
                                 AuditEventRepository auditRepository,
@@ -52,7 +55,9 @@ public class OrchestrationService {
                                 ApplicationEventPublisher eventPublisher,
                                 OrchestrationArtifactRepository artifactRepository,
                                 OrchestrationActivityService activityService,
-                                CodebaseSnapshotNormalizer codebaseSnapshotNormalizer) {
+                                CodebaseSnapshotNormalizer codebaseSnapshotNormalizer,
+                                SupportedRequirementPolicy supportedRequirementPolicy,
+                                @Value("${orchestrator.agent.provider:template}") String agentProvider) {
         this.runRepository = runRepository;
         this.auditRepository = auditRepository;
         this.plannedAgent = plannedAgent;
@@ -60,11 +65,12 @@ public class OrchestrationService {
         this.artifactRepository = artifactRepository;
         this.activityService = activityService;
         this.codebaseSnapshotNormalizer = codebaseSnapshotNormalizer;
+        this.supportedRequirementPolicy = supportedRequirementPolicy;
+        this.genericProviderEnabled = "openai-compatible".equalsIgnoreCase(agentProvider);
     }
 
     @Transactional
     public OrchestrationRunResponse createRun(CreateRunRequest request) {
-        UUID runId = UUID.randomUUID();
         if (request.scenario() == RunScenario.BROWNFIELD
             && (request.codebaseSnapshot() == null || request.codebaseSnapshot().isEmpty())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -72,6 +78,9 @@ public class OrchestrationService {
         }
         String codebaseContext = codebaseSnapshotNormalizer.normalize(
             request.codebaseContext(), request.snapshotRevision(), request.codebaseSnapshot());
+        supportedRequirementPolicy.requireSupported(request.requirement(), request.scenario(), codebaseContext,
+            genericProviderEnabled);
+        UUID runId = UUID.randomUUID();
         OrchestrationRun run = new OrchestrationRun(runId, request.requirement().trim(),
             codebaseContext, request.scenario(), RunStatus.AWAITING_APPROVAL);
         runRepository.saveAndFlush(run);
@@ -95,6 +104,8 @@ public class OrchestrationService {
         OrchestrationRun run = findRun(runId);
         int previousPlanVersion = run.getPlanVersion();
         String updatedRequirement = request.requirement().trim();
+        supportedRequirementPolicy.requireSupported(updatedRequirement, run.getScenario(), run.getCodebaseContext(),
+            genericProviderEnabled);
         run.prepareForReplan(updatedRequirement);
         runRepository.flush();
         List<TaskBlueprint> plan = plannedAgent.plan(runId, updatedRequirement, run.getCodebaseContext(), run.getScenario());
@@ -188,7 +199,9 @@ public class OrchestrationService {
 
     @Transactional(readOnly = true)
     public byte[] exportAcceptedArtifacts(UUID runId) {
-        findRun(runId);
+        OrchestrationRun run = findRun(runId);
+        String artifactRoot = GeneratedProjectIdentity.fromRequirement(
+            run.getRequirement(), run.getScenario(), run.getCodebaseContext()).root();
         List<OrchestrationArtifact> accepted = artifactRepository.findByRun_IdOrderByPathAsc(runId).stream()
                 .filter(artifact -> artifact.getStatus() == ArtifactStatus.ACCEPTED)
                 .toList();
@@ -197,7 +210,10 @@ public class OrchestrationService {
         }
         try (ByteArrayOutputStream buffer = new ByteArrayOutputStream(); ZipOutputStream zip = new ZipOutputStream(buffer)) {
             for (OrchestrationArtifact artifact : accepted) {
-                String path = artifact.getPath().substring("generated/url-shortener/".length());
+                if (!artifact.getPath().startsWith(artifactRoot)) {
+                    throw new IllegalStateException("Accepted artifact escaped its generated project namespace");
+                }
+                String path = artifact.getPath().substring(artifactRoot.length());
                 zip.putNextEntry(new ZipEntry(path));
                 zip.write(artifact.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 zip.closeEntry();

@@ -190,6 +190,20 @@ class AgenticOrchestratorApplicationTests {
 	}
 
 	@Test
+	void rejectsUnsupportedGreenfieldDomainBeforeCreatingRun() throws Exception {
+		mockMvc.perform(post("/api/v1/runs")
+				.with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_orchestrator:write")))
+				.contentType("application/json")
+				.content("""
+						{"requirement":"Build an inventory service with products, stock adjustments, and a REST API",
+						 "scenario":"GREENFIELD"}
+						"""))
+				.andExpect(status().isUnprocessableEntity())
+				.andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("URL-shortener")))
+				.andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("No run was created")));
+	}
+
+	@Test
 	void replanningIncrementsPlanVersionAndPreservesOriginalRequest() {
 		OrchestrationRunResponse created = orchestrationService.createRun(
 				new CreateRunRequest("Add analytics", RunScenario.BROWNFIELD, null,

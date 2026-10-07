@@ -75,7 +75,7 @@ class LanguageModelAgentTests {
                 new TemplateTaskExecutionAgent(), stateService);
 
         UUID runId = UUID.randomUUID();
-        List<ArtifactDraft> fallback = agent.execute(runId, "Build a service", "", "",
+                List<ArtifactDraft> fallback = agent.execute(runId, "Build a URL shortener", "", "",
                 RunScenario.GREENFIELD, new TaskBlueprint("implementation", "Implement", "Generate code", List.of()));
 
         assertThat(fallback).isNotEmpty().allSatisfy(artifact ->
@@ -92,10 +92,26 @@ class LanguageModelAgentTests {
         TaskExecutionAgent agent = new LanguageModelTaskExecutionAgent(client, mapper,
                 new TemplateTaskExecutionAgent(), stateService);
 
-        List<ArtifactDraft> artifacts = agent.execute(UUID.randomUUID(), "Build a service", "", "",
+                List<ArtifactDraft> artifacts = agent.execute(UUID.randomUUID(),
+                        "Build an inventory service with products and stock adjustments", "", "",
                 RunScenario.GREENFIELD, new TaskBlueprint("implementation", "Implement", "Generate code", List.of()));
 
         assertThat(artifacts).singleElement().extracting("path")
-                .isEqualTo("generated/url-shortener/src/main/java/App.java");
+                        .isEqualTo("generated/inventory/src/main/java/App.java");
+            }
+
+            @Test
+            void doesNotFallBackToUrlShortenerWhenGenericProviderFails() {
+                when(client.generateJson(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                        .thenThrow(new org.springframework.web.client.ResourceAccessException("provider unavailable"));
+                TaskExecutionAgent agent = new LanguageModelTaskExecutionAgent(client, mapper,
+                        new TemplateTaskExecutionAgent(), stateService);
+
+                org.assertj.core.api.Assertions.assertThatThrownBy(() -> agent.execute(UUID.randomUUID(),
+                        "Build an inventory service with products and stock adjustments", "", "", RunScenario.GREENFIELD,
+                        new TaskBlueprint("implementation", "Implement", "Generate code", List.of())))
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("no matching deterministic fallback")
+                        .hasMessageContaining("no URL-shortener artifacts were substituted");
     }
 }

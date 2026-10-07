@@ -1,6 +1,7 @@
 package com.example.orchestrator.workflow;
 
 import com.example.orchestrator.application.ArtifactDraft;
+import com.example.orchestrator.application.GeneratedProjectIdentity;
 import com.example.orchestrator.application.TaskExecutionAgent;
 import com.example.orchestrator.domain.ArtifactStatus;
 import com.example.orchestrator.domain.RunStatus;
@@ -26,7 +27,6 @@ import java.util.UUID;
 public class OrchestrationActivityService {
     private static final int MAX_ARTIFACTS_PER_TASK = 20;
     private static final int MAX_ARTIFACT_CHARACTERS = 100_000;
-    private static final String ARTIFACT_ROOT = "generated/url-shortener/";
         private static final Set<String> ALLOWED_MEDIA_TYPES = Set.of(
                 "text/x-java-source", "text/markdown", "text/plain", "application/xml", "application/json", "text/yaml",
                 "text/x-dockerfile");
@@ -92,15 +92,18 @@ public class OrchestrationActivityService {
         try {
                     List<ArtifactDraft> drafts = taskExecutionAgent.execute(UUID.fromString(context.runId()), context.requirement(), context.codebaseContext(),
                         context.clarificationNotes(), context.scenario(), context.blueprint());
-            validateArtifacts(drafts);
+                    String artifactRoot = GeneratedProjectIdentity.fromRequirement(
+                        context.requirement(), context.scenario(), context.codebaseContext()).root();
+                    validateArtifacts(drafts, artifactRoot);
                     if (taskKey.equals("final-validation")) {
-                        ProposalValidationResult result = proposalValidator.validate(UUID.fromString(runId), drafts);
-                        ProjectExecutionResult execution = isolatedProjectValidator.validate(UUID.fromString(runId), drafts);
+                        ProposalValidationResult result = proposalValidator.validate(UUID.fromString(runId), drafts, artifactRoot);
+                        ProjectExecutionResult execution = isolatedProjectValidator.validate(
+                            UUID.fromString(runId), drafts, artifactRoot);
                         drafts = new java.util.ArrayList<>(drafts);
                         String report = result.report() + "\n## Isolated build and test execution\n\n"
                                 + execution.summary() + "\n";
                         ArtifactDraft evidence = new ArtifactDraft(
-                            "generated/url-shortener/validation-report.md", "text/markdown", report);
+                            artifactRoot + "validation-report.md", "text/markdown", report);
                         drafts.add(evidence);
                         if (!result.passed() || (isolatedProjectValidator.required() && !execution.executed())
                             || (execution.executed() && !execution.passed())) {
@@ -167,16 +170,17 @@ public class OrchestrationActivityService {
                 .orElseThrow(() -> new IllegalStateException("Run not found: " + runId));
     }
 
-    private void validateArtifacts(List<ArtifactDraft> drafts) {
+    private void validateArtifacts(List<ArtifactDraft> drafts, String artifactRoot) {
         if (drafts == null || drafts.isEmpty() || drafts.size() > MAX_ARTIFACTS_PER_TASK) {
             throw new IllegalArgumentException("Agent returned an invalid artifact count");
         }
         Set<String> paths = new HashSet<>();
         for (ArtifactDraft draft : drafts) {
             boolean duplicatePath = draft.path() != null && paths.contains(draft.path());
-            boolean allowedPath = draft.path() != null && (draft.path().matches("generated/url-shortener/[A-Za-z0-9._/-]+")
-                    || draft.path().equals(ARTIFACT_ROOT + "Dockerfile"));
-            if (draft.path() == null || !draft.path().startsWith(ARTIFACT_ROOT)
+                boolean allowedPath = draft.path() != null && (draft.path().matches(
+                    java.util.regex.Pattern.quote(artifactRoot) + "[A-Za-z0-9._/-]+")
+                    || draft.path().equals(artifactRoot + "Dockerfile"));
+                if (draft.path() == null || !draft.path().startsWith(artifactRoot)
                     || draft.path().contains("..") || draft.path().contains("\\")
                     || !allowedPath || duplicatePath
                     || !ALLOWED_MEDIA_TYPES.contains(draft.mediaType())

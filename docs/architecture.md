@@ -2,7 +2,7 @@
 
 ## Scope
 
-This repository contains the engineering orchestrator. A URL-shortener project is generated as a proposal under the isolated artifact root `generated/url-shortener/`; it is not part of the orchestrator runtime source tree and is not copied into this repository. The generated proposal has its own package structure, described below.
+This repository contains the engineering orchestrator. Generated projects are proposals under an isolated, request-derived root such as `generated/inventory/` or `generated/url-shortener/`; they are not part of the orchestrator runtime source tree and are not copied into this repository. The built-in deterministic generator remains the URL-shortener sample; arbitrary domains require the configured OpenAI-compatible provider.
 
 ## Orchestrator package tree
 
@@ -34,7 +34,7 @@ configuration -> framework wiring only
 
 The domain package has no dependency on Spring MVC, Temporal, or persistence. Application use cases orchestrate domain operations and depend on repository/agent abstractions. JPA entities and Temporal/model integrations are adapters at the edge.
 
-## Generated URL-shortener package tree
+## URL-shortener Sample Package Tree
 
 ```text
 com.example.urlshortener
@@ -60,4 +60,4 @@ Temporal persists waits, signals, concurrent task execution, bounded retries, an
 
 ## Trust boundaries and limitations
 
-Generated files remain data in PostgreSQL until explicit approval; export creates a ZIP but never writes into the orchestrator checkout. Required generated-project builds/tests run in a disposable Docker sandbox with no network, read-only input/cache mounts, resource limits, bounded output, and cleanup. Brownfield source is caller-supplied and read-only; its revision is recorded as caller-declared provenance and is not verified against Git. The impact list is a candidate inventory, not semantic analysis. Destination DNS checks reduce private-network redirect risk but cannot guarantee that a browser's later DNS lookup resolves to the same address; a production redirect service needs an explicit hostname allowlist or another DNS-rebinding-resistant redirect design and independent security review. Orchestrator rate limits are per process, not distributed. The local Temporal Compose service is development-only and uses in-memory persistence.
+Generated files remain data in PostgreSQL until explicit approval; export creates a ZIP but never writes into the orchestrator checkout. Required generated-project builds/tests run in a disposable Docker sandbox with no network, read-only input/cache mounts, resource limits, bounded output, and cleanup. Model-backed generic projects use domain-neutral artifact checks plus the derived project namespace; URL-shortener output receives additional sample-specific security checks. These checks and tests do not prove that model output fully meets the requirement, so review the requirement, generated domain documentation, tests, and validation report. A failed model call for a non-URL-shortener requirement fails closed rather than using the URL-shortener template. Brownfield source is caller-supplied and read-only; its revision is recorded as caller-declared provenance and is not verified against Git. The impact list is a candidate inventory, not semantic analysis. The local Temporal Compose service is development-only and uses in-memory persistence.

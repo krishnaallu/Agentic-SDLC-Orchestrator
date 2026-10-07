@@ -60,7 +60,7 @@ class AgenticOrchestratorPostgresIT {
                         .with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_orchestrator:write")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"requirement":"PostgreSQL-backed API integration","scenario":"GREENFIELD"}
+                                {"requirement":"Build a URL shortener; verify PostgreSQL-backed API integration","scenario":"GREENFIELD"}
                                 """))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
@@ -93,8 +93,9 @@ class AgenticOrchestratorPostgresIT {
                 int runNumber = index;
                 futures.add(executor.submit(() -> {
                     start.await();
-                    return orchestrationService.createRun(new CreateRunRequest(
-                            "Concurrent PostgreSQL run " + runNumber, RunScenario.GREENFIELD)).id();
+                        return orchestrationService.createRun(new CreateRunRequest(
+                            "Build a URL shortener; concurrent PostgreSQL run " + runNumber,
+                            RunScenario.GREENFIELD)).id();
                 }));
             }
             start.countDown();

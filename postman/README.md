@@ -23,7 +23,7 @@ The default `local` profile is unauthenticated and listens only on loopback. Do 
 ## Run A Demo
 
 1. Send **Health Check** and **List Scenario Examples**.
-2. Choose a use-case folder: Greenfield for a new system, Brownfield for a change to supplied existing-code excerpts, or Ambiguous for clarification behavior.
+2. Choose a use-case folder: Greenfield for the supported URL-shortener sample, Brownfield for a URL-shortener change to supplied existing-code excerpts, or Ambiguous for clarification behavior.
 3. Send that folder's **Create** request. Its test script saves the returned ID to a collection variable.
 4. Approve the plan. Poll **Get Run...** until the status changes; the workflow is asynchronous.
 5. If the status becomes `AWAITING_CLARIFICATION`, send the clarification request only then.
@@ -31,6 +31,8 @@ The default `local` profile is unauthenticated and listens only on loopback. Do 
 7. Export the ZIP after accepting. Export contains proposed files only; it does not apply or deploy them.
 
 The collection stores Greenfield, Brownfield, Ambiguous, and replan run IDs separately. Use the request description as the state prerequisite for each action. A rejected plan/artifact uses the same decision endpoint with `approved` set to `false`.
+
+The deterministic generator is URL-shortener-specific. To use the Generic Inventory Service folder, configure `ORCHESTRATOR_AGENT_PROVIDER=openai-compatible`, `ORCHESTRATOR_AGENT_API_KEY`, `ORCHESTRATOR_AGENT_BASE_URL`, and `ORCHESTRATOR_AGENT_MODEL` in the PowerShell session **before starting Spring Boot**. Generic runs get a derived namespace such as `generated/inventory/` and pass through generic structure, domain-name, and isolated Maven tests. If the model provider fails, generation fails closed rather than substituting URL-shortener artifacts. Without the provider, the Inventory Without Model Provider request should return HTTP 422 before creating a run.
 
 ## Secure Profile
 

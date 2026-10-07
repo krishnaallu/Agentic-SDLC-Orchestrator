@@ -21,7 +21,6 @@ import java.util.stream.Stream;
 
 @Component
 public class IsolatedProjectValidator {
-    private static final String ROOT = "generated/url-shortener/";
     private static final String DEFAULT_IMAGE = "maven:3.9.9-eclipse-temurin-21";
     private final OrchestrationArtifactRepository artifactRepository;
     private final boolean enabled;
@@ -44,7 +43,7 @@ public class IsolatedProjectValidator {
         this.timeout = timeout;
     }
 
-    public ProjectExecutionResult validate(UUID runId, List<ArtifactDraft> currentDrafts) {
+    public ProjectExecutionResult validate(UUID runId, List<ArtifactDraft> currentDrafts, String artifactRoot) {
         if (!enabled) {
             return ProjectExecutionResult.skipped("Docker project validation disabled by configuration");
         }
@@ -56,8 +55,8 @@ public class IsolatedProjectValidator {
         String containerName = "url-shortener-validation-" + UUID.randomUUID();
         BoundedLog output = new BoundedLog(48000);
         try {
-            workspace = Files.createTempDirectory("url-shortener-validation-");
-            materialize(workspace, runId, currentDrafts);
+            workspace = Files.createTempDirectory("generated-project-validation-");
+            materialize(workspace, runId, currentDrafts, artifactRoot);
             List<String> command = dockerCommand(workspace, containerName);
             Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
             Thread outputReader = new Thread(() -> captureOutput(process.getInputStream(), output), "sandbox-output-reader");
@@ -105,18 +104,19 @@ public class IsolatedProjectValidator {
         return required;
     }
 
-    private void materialize(Path workspace, UUID runId, List<ArtifactDraft> currentDrafts) throws IOException {
+    private void materialize(Path workspace, UUID runId, List<ArtifactDraft> currentDrafts,
+                             String artifactRoot) throws IOException {
         List<ArtifactContent> artifacts = new ArrayList<>(artifactRepository.findByRun_IdOrderByPathAsc(runId).stream()
                 .map(artifact -> new ArtifactContent(artifact.getPath(), artifact.getContent())).toList());
         if (currentDrafts != null) {
             currentDrafts.stream().map(draft -> new ArtifactContent(draft.path(), draft.content())).forEach(artifacts::add);
         }
         for (ArtifactContent artifact : artifacts) {
-            if (artifact.path() == null || !artifact.path().startsWith(ROOT)
+            if (artifact.path() == null || !artifact.path().startsWith(artifactRoot)
                     || artifact.path().contains("..") || artifact.path().contains("\\")) {
                 throw new IllegalArgumentException("Artifact failed sandbox path validation");
             }
-            Path destination = workspace.resolve(artifact.path().substring(ROOT.length())).normalize();
+            Path destination = workspace.resolve(artifact.path().substring(artifactRoot.length())).normalize();
             if (!destination.startsWith(workspace) || artifact.content() == null) {
                 throw new IllegalArgumentException("Artifact escaped isolated workspace");
             }

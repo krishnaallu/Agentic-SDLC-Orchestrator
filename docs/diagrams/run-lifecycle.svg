@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 680" role="img" aria-labelledby="title desc">
+  <title id="title">Orchestration Run Lifecycle</title>
+  <desc id="desc">A visual sequence showing requirement submission, plan approval, analysis, parallel implementation tests and documentation, synchronized readiness reviews, final sandbox validation, artifact approval, and ZIP export.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#506477"/></marker>
+    <style>
+      text { font-family: "Segoe UI", Arial, sans-serif; fill: #172735; }
+      .title { font-size: 29px; font-weight: 700; }
+      .subtitle { font-size: 16px; fill: #4b5f70; }
+      .step { font-size: 16px; font-weight: 700; }
+      .body { font-size: 13px; fill: #3e5364; }
+      .label { font-size: 13px; font-weight: 700; fill: #8a5b00; }
+      .bus { fill: none; stroke: #506477; stroke-width: 2.5; }
+      .footer { font-size: 14px; fill: #ffffff; }
+      .box { stroke-width: 2; rx: 13; }
+      .arrow { fill: none; stroke: #506477; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1440" height="680" fill="#f5f8fb"/>
+  <text x="48" y="52" class="title">One Run, From Request To Reviewed Proposal</text>
+  <text x="48" y="80" class="subtitle">Human gates control when work starts and when output can be exported.</text>
+
+  <rect x="42" y="126" width="210" height="92" class="box" fill="#e8f1fb" stroke="#3977a8"/>
+  <text x="62" y="160" class="step">1. Submit request</text>
+  <text x="62" y="185" class="body">Greenfield, Brownfield, or ambiguous</text>
+  <path d="M252 172 H294" class="arrow"/>
+
+  <rect x="302" y="126" width="210" height="92" class="box" fill="#e8f1fb" stroke="#3977a8"/>
+  <text x="322" y="160" class="step">2. Build plan</text>
+  <text x="322" y="185" class="body">Tasks and dependencies are saved</text>
+  <path d="M512 172 H554" class="arrow"/>
+
+  <rect x="562" y="126" width="236" height="92" class="box" fill="#fff4d6" stroke="#bd8418"/>
+  <text x="582" y="160" class="step">3. Plan approval</text>
+  <text x="582" y="185" class="body">Reject stops; approve starts Temporal</text>
+  <path d="M798 172 H840" class="arrow"/>
+
+  <rect x="848" y="126" width="240" height="92" class="box" fill="#e8f1fb" stroke="#3977a8"/>
+  <text x="868" y="160" class="step">4. Analyze and design</text>
+  <text x="868" y="185" class="body">Clarify intent; inspect supplied snapshot</text>
+  <path d="M1088 172 H1130" class="arrow"/>
+
+  <rect x="1138" y="126" width="250" height="92" class="box" fill="#e9f5ef" stroke="#32845f"/>
+  <text x="1158" y="160" class="step">5. Generate proposal</text>
+  <text x="1158" y="185" class="body">Selected agent creates project artifacts</text>
+
+  <path d="M1263 218 V285 H158" class="bus"/>
+  <path d="M158 285 V326" class="arrow"/>
+  <path d="M406 285 V326" class="arrow"/>
+  <path d="M654 285 V326" class="arrow"/>
+  <text x="422" y="276" class="body">parallel proposal tasks</text>
+
+  <rect x="48" y="336" width="220" height="118" class="box" fill="#e8f1fb" stroke="#3977a8"/>
+  <text x="68" y="371" class="step">Implementation</text>
+  <text x="68" y="398" class="body"><tspan x="68">Domain code and API</tspan><tspan x="68" dy="19">Proposal only</tspan></text>
+
+  <rect x="296" y="336" width="220" height="118" class="box" fill="#e8f1fb" stroke="#3977a8"/>
+  <text x="316" y="371" class="step">Tests</text>
+  <text x="316" y="398" class="body"><tspan x="316">Unit and API tests</tspan><tspan x="316" dy="19">Acceptance coverage</tspan></text>
+
+  <rect x="544" y="336" width="220" height="118" class="box" fill="#e8f1fb" stroke="#3977a8"/>
+  <text x="564" y="371" class="step">Documentation</text>
+  <text x="564" y="398" class="body"><tspan x="564">Setup and trade-offs</tspan><tspan x="564" dy="19">Generated with the proposal</tspan></text>
+
+  <rect x="792" y="336" width="220" height="118" class="box" fill="#f0ebfa" stroke="#7756a3"/>
+  <text x="812" y="371" class="step">Integration + security</text>
+  <text x="812" y="398" class="body"><tspan x="812">Checks synchronize after</tspan><tspan x="812" dy="19">implementation and tests</tspan></text>
+
+  <rect x="1040" y="336" width="220" height="118" class="box" fill="#f0ebfa" stroke="#7756a3"/>
+  <text x="1060" y="371" class="step">Readiness gates</text>
+  <text x="1060" y="398" class="body"><tspan x="1060">Deployment and release</tspan><tspan x="1060" dy="19">evidence is assembled</tspan></text>
+
+  <rect x="1280" y="336" width="112" height="118" class="box" fill="#f0ebfa" stroke="#7756a3"/>
+  <text x="1294" y="371" class="step">Final</text>
+  <text x="1294" y="397" class="body"><tspan x="1294">Static +</tspan><tspan x="1294" dy="18">sandbox</tspan><tspan x="1294" dy="18">validation</tspan></text>
+
+  <path d="M158 454 V482 M406 454 V482 M654 454 V482 M158 482 H902" class="bus"/>
+  <path d="M902 482 V460" class="arrow"/>
+  <path d="M1012 395 H1032" class="arrow"/>
+  <path d="M1260 395 H1272" class="arrow"/>
+
+  <path d="M1336 454 V506 H1038" class="arrow"/>
+  <rect x="824" y="514" width="330" height="92" class="box" fill="#fff4d6" stroke="#bd8418"/>
+  <text x="846" y="549" class="step">6. Artifact review</text>
+  <text x="846" y="576" class="body">Person inspects files and validation report</text>
+  <path d="M824 560 H650" class="arrow"/>
+
+  <rect x="360" y="514" width="280" height="92" class="box" fill="#e9f5ef" stroke="#32845f"/>
+  <text x="382" y="549" class="step">7. Accept and export ZIP</text>
+  <text x="382" y="576" class="body">Operator separately applies or deploys</text>
+  <rect x="48" y="626" width="1344" height="34" rx="8" fill="#142d3d"/>
+  <text x="68" y="649" class="footer">Run states are visible through the API. Failures stop the run; replan creates a new plan version and requires approval again.</text>
+</svg>

@@ -1,215 +1,156 @@
 # Engineering Orchestrator
 
-## What This App Does
+Turn a software requirement into a plan, a reviewable code proposal, and test evidence. The orchestrator coordinates the work; it does not deploy code or edit a target repository.
 
-This application helps turn a software request into a reviewed engineering proposal. You describe what you want built or changed; the orchestrator creates a plan, asks for approval, prepares proposed files and checks them in an isolated environment, then lets a person review the results.
+> **What is included:** The deterministic offline generator is a URL-shortener sample. Other service domains require the configured OpenAI-compatible model provider. Model-generated projects are proposals, not guaranteed production-ready software.
 
-**Important:** This repository is the orchestrator. The sample URL-shortener is a proposed project created by the orchestrator. It is not a separate, running URL-shortener service, and approved files are exported as a ZIP rather than installed into another project.
+## Architecture
 
-## What Is Implemented
+The image shows the runtime components and where outputs go. The generated service stays isolated until a person downloads its approved ZIP.
 
-| Requirement area | What the orchestrator does | Boundary to keep in mind |
+<img src="docs/diagrams/architecture.svg" alt="Engineering Orchestrator architecture diagram" width="100%">
+
+## How A Run Works
+
+<img src="docs/diagrams/run-lifecycle.svg" alt="Orchestration run lifecycle diagram" width="100%">
+
+Independent graph tasks can run in parallel and synchronize at their dependencies. Workflows pause for plan approval, clarification when needed, and artifact review. Temporal retries activities within configured bounds; PostgreSQL retains run state and decision lineage.
+
+## Feature Map
+
+| Area | Implemented behavior | Boundary |
 |---|---|---|
-| Clear code boundaries | Keeps API, application logic, agents, domain types, persistence, configuration, security, and workflow code in separate packages. | The URL-shortener's package layout is generated proposal content, not this app's runtime code. |
-| Approval security | The `secure` profile checks signed JWTs and requires different scopes for reading, changing, approving, and operations. Audit decisions use the JWT subject. | By default, the `local` profile disables authentication and binds to this computer only. Never expose it to a network. |
-| Request controls | Limits request size and applies a per-process, per-peer request rate limit to run APIs. | Limits are not shared across multiple app instances. |
-| URL destination safety | The generated URL-shortener proposal includes checks for unsafe schemes, private and local addresses, and common metadata hostnames. | These checks are in generated code. They are not running as a URL-shortener service here; DNS-rebinding protection needs additional production design and review. |
-| Brownfield changes | Accepts a bounded set of caller-supplied source files, records a caller-declared revision, and creates candidate impacted-file and compatibility-check documents. | It does not read a Git repository itself or verify the revision. The impact list and regression checklist need engineering review. |
-| Safe proposal testing | Runs generated project builds and tests in a disposable Docker container with networking disabled, resource limits, read-only source and dependency-cache mounts, and bounded time/output. | The generated files are not applied to a live service or this repository. Docker and the needed Maven dependencies must be available. |
-| Workflow gates | Includes plan approval, clarification when needed, implementation and test planning, integration-test, security-review, deployment-readiness, release-readiness, final-validation, and artifact-review stages. | Some review stages create evidence for a person to inspect; they are not an automated security certification. |
-| Persistence and recovery | Stores runs, plans, tasks, approvals, artifacts, and audit history in PostgreSQL. Temporal coordinates durable workflow progress and retries. | The included Temporal server is for local development and is not a production deployment. |
-| Verification and operations | Includes PostgreSQL integration tests, API/security tests, concurrency tests, Prometheus metrics, an OSV dependency scan, and operating guidance. | Metrics are not production SLOs. Backup/restore drills, alerting, and production deployment still need to be set up. |
+| Requirement and planning | Greenfield, Brownfield, and ambiguous scenarios; explicit task dependency graph and plan approval. | Scenario coverage is scoped to engineering proposals, not arbitrary unattended deployment. |
+| Brownfield input | Bounded, read-only caller-supplied files; revision label; candidate impacted-file list and regression/compatibility checklist. | The service does not scan a local Git checkout or verify the declared revision. Analysis is a candidate for human review. |
+| Code generation | Deterministic URL-shortener sample offline; optional model-backed generation for request-derived domains such as `generated/inventory/`. | Generic generation requires a working provider. If the provider fails, it does not substitute URL-shortener output. |
+| Validation | Required-by-default final validation, domain-specific URL-shortener checks, generic structure/domain checks, and generated Maven tests in isolated Docker. | Passing tests do not prove full semantic correctness, compliance, or production readiness. |
+| Safe handling | Artifacts are path-confined, size-limited, persisted for review, and exported only after approval. | The ZIP is not installed, committed, or deployed by the orchestrator. |
+| Security and operations | JWT scopes in `secure` mode, loopback-only unauthenticated `local` mode, request limits, audit events, Actuator/Prometheus, and OSV dependency scan. | Rate limiting is per process. The bundled Temporal server is for development. |
 
-The full evidence and remaining boundaries are in [Requirement Traceability](docs/traceability.md), [Architecture](docs/architecture.md), and the [Operations Runbook](docs/runbook.md).
+## Start Locally
 
-## Start It Locally
+Requirements: Java 21+, Docker Desktop, and PowerShell.
 
-Prerequisites: Java 21 or newer, Docker Desktop, and PowerShell. PostgreSQL and Temporal are provided by Docker Compose.
-
-From the repository directory, start the dependencies:
+Start PostgreSQL and Temporal:
 
 ```powershell
 docker compose up -d postgres temporal
 ```
 
-Then start Spring Boot:
+Start the orchestrator from the repository root and leave this terminal running:
 
 ```powershell
 .\mvnw.cmd spring-boot:run
 ```
 
-The default profile is `local`: authentication is off and the app listens only on `127.0.0.1:8080`. It is intended for local development only. Keep the terminal running while using the app. Temporal's local web UI is at `http://localhost:8233`.
+The default `local` profile disables authentication and binds to `127.0.0.1:8080`. **Do not expose this profile to a LAN, proxy, or production.** The local Temporal UI is at `http://localhost:8233`.
 
-Check that the app is healthy and list the available scenario examples:
+Check readiness and scenario examples:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/actuator/health
 Invoke-RestMethod http://127.0.0.1:8080/api/v1/scenarios
 ```
 
-To stop the app, press `Ctrl+C` in the terminal where Maven is running. Stop the supporting containers later with `docker compose down` (this keeps the PostgreSQL data volume).
+Stop the app with `Ctrl+C`. `docker compose down` stops the dependencies but keeps the PostgreSQL data volume.
 
-## Start Secure Mode
+## Generate Other Service Domains
 
-For a deployment that uses an identity provider, set its real issuer URL and explicitly select the `secure` profile:
+The built-in deterministic provider is for the URL-shortener sample. For inventory or another domain, configure a real OpenAI-compatible provider **before starting Spring Boot**:
+
+```powershell
+$env:ORCHESTRATOR_AGENT_PROVIDER = 'openai-compatible'
+$env:ORCHESTRATOR_AGENT_API_KEY = '<enter your provider key locally; never commit it>'
+$env:ORCHESTRATOR_AGENT_BASE_URL = 'https://api.openai.com/v1'
+$env:ORCHESTRATOR_AGENT_MODEL = 'gpt-4.1-mini'
+.\mvnw.cmd spring-boot:run
+```
+
+If the provider is not enabled, unsupported Greenfield domains receive HTTP 422 before a run is created. The model-backed path derives a project root from the request, asks the provider for plan and artifacts, checks domain naming and project structure, and runs generated tests in the sandbox. A provider error fails closed rather than using URL-shortener templates. Review model-generated plans, code, tests, and validation evidence; no provider key is configured in this repository's test environment, so an actual generic live generation must be tested with your provider account.
+
+Keep provider keys in environment variables or a secret manager. Never commit them or include them in snapshots.
+
+## Secure Mode
+
+For an identity provider, configure its actual issuer and explicitly use the `secure` profile:
 
 ```powershell
 $env:AUTH_ISSUER_URI = 'https://your-real-identity-provider/issuer'
 .\mvnw.cmd '-Dspring-boot.run.profiles=secure' spring-boot:run
 ```
 
-Secure mode requires signed JWTs. The token must contain these scopes for the corresponding actions:
+The JWT must carry the appropriate scope:
 
-- `orchestrator:write`: create or replan a run, or submit clarification.
-- `orchestrator:read`: inspect runs and export approved artifacts.
-- `orchestrator:approve`: approve or reject plans and artifacts.
-- `orchestrator:ops`: view reliability and Prometheus metrics.
+- `orchestrator:write`: create/replan a run or submit clarification.
+- `orchestrator:read`: inspect runs and export accepted artifacts.
+- `orchestrator:approve`: approve/reject plans and artifacts.
+- `orchestrator:ops`: access operational metrics.
 
-Do not use the `local` profile outside your own computer. More deployment cautions are in the [runbook](docs/runbook.md).
+## Submit And Follow A Run
 
-## Submit A Requirement
-
-In a second PowerShell terminal, choose a scenario and submit the requirement. This example starts a new Greenfield project:
+The [Postman collection](postman/README.md) includes Greenfield, Brownfield, ambiguous, generic inventory, and monitoring examples. Quick PowerShell example for the deterministic URL-shortener sample:
 
 ```powershell
-$request = @{
+$body = @{
   requirement = 'Build a URL shortener with expiring links, safe redirects, and click analytics'
   scenario = 'GREENFIELD'
 } | ConvertTo-Json
 
 $run = Invoke-RestMethod -Method Post `
   -Uri 'http://127.0.0.1:8080/api/v1/runs' `
-  -ContentType 'application/json' `
-  -Body $request
+  -ContentType 'application/json' -Body $body
 
 $run | Select-Object id, scenario, status, planVersion
 ```
 
-Keep the run `id`; it is how you check progress later. New runs normally wait at `AWAITING_APPROVAL` before work begins.
-
-Approve the plan in local mode:
+The new run normally waits at `AWAITING_APPROVAL`. Review its plan, then approve it:
 
 ```powershell
 $runId = $run.id
-$decision = @{
-  approved = $true
-  actor = 'local-user'
-  note = 'Plan reviewed'
-} | ConvertTo-Json
-
+$decision = @{ approved = $true; actor = 'local-reviewer'; note = 'Plan reviewed' } | ConvertTo-Json
 Invoke-RestMethod -Method Post `
   -Uri "http://127.0.0.1:8080/api/v1/runs/$runId/decision" `
-  -ContentType 'application/json' `
-  -Body $decision
+  -ContentType 'application/json' -Body $decision
 ```
 
-In secure mode, include an `Authorization: Bearer ...` header with a token that has the required scope. The recorded actor is taken from that token, not the JSON `actor` value.
-
-## Check Run Progress
-
-Fetch the run whenever you want an updated status:
+Fetch current run, task, audit, and artifact status:
 
 ```powershell
 $current = Invoke-RestMethod "http://127.0.0.1:8080/api/v1/runs/$runId"
 $current | Select-Object id, status, failureReason
 $current.tasks | Select-Object nodeKey, status, attemptCount, outputSummary | Format-Table
-```
-
-The run response also contains `artifacts` and `audit` history:
-
-```powershell
 $current.artifacts | Select-Object taskKey, path, status
-$current.audit | Select-Object action, actor, happenedAt, details | Format-Table -Wrap
 ```
 
-Typical run statuses:
+If the run reaches `AWAITING_CLARIFICATION`, submit answers to `/api/v1/runs/{runId}/clarification`. At `AWAITING_ARTIFACT_REVIEW`, inspect the artifacts and `validation-report.md`; approve/reject them at `/api/v1/runs/{runId}/artifacts/decision`. Accepted files can be downloaded from `/api/v1/runs/{runId}/artifacts/export`. Export is a ZIP download only, not deployment.
 
-- `AWAITING_APPROVAL`: waiting for a person to approve the plan.
-- `RUNNING`: workflow stages are being processed.
-- `AWAITING_CLARIFICATION`: a requirement question needs an answer.
-- `AWAITING_ARTIFACT_REVIEW`: proposed files and validation evidence are ready for review.
-- `COMPLETED`: artifacts were accepted; they can be exported.
-- `FAILED`: a required workflow or validation stage failed. Inspect `failureReason`, tasks, and the validation report before replanning.
+The API does not currently list all runs. Save each returned run ID. Common states are `AWAITING_APPROVAL`, `RUNNING`, `AWAITING_CLARIFICATION`, `AWAITING_ARTIFACT_REVIEW`, `COMPLETED`, and `FAILED`.
 
-Each task has its own status (`PLANNED`, `RUNNING`, `SUCCEEDED`, or `FAILED`) and attempt count. The API does not currently provide a list-all-runs endpoint, so keep each run ID.
+## Scenarios
 
-If clarification is requested, submit the answer:
+- **Greenfield:** new URL-shortener sample with deterministic mode, or a different domain with the configured model provider.
+- **Brownfield:** provide `scenario: "BROWNFIELD"`, a caller-declared `snapshotRevision`, and `codebaseSnapshot` files. Maximum 25 files and 120 KB combined. The revision is not Git-verified; impact/compatibility output is a candidate for review, not proof.
+- **Ambiguous:** use `scenario: "AMBIGUOUS"`. The workflow creates questions and waits for human answers before continuing.
 
-```powershell
-$answer = @{ answers = 'Omitted expiry means no expiry; reject past dates.'; actor = 'local-user' } | ConvertTo-Json
-Invoke-RestMethod -Method Post `
-  -Uri "http://127.0.0.1:8080/api/v1/runs/$runId/clarification" `
-  -ContentType 'application/json' `
-  -Body $answer
-```
-
-## Review And Export
-
-When a run reaches `AWAITING_ARTIFACT_REVIEW`, inspect the artifacts and validation report. Accept or reject the proposal:
+## Verification
 
 ```powershell
-$review = @{ approved = $true; actor = 'local-user'; note = 'Artifacts reviewed' } | ConvertTo-Json
-Invoke-RestMethod -Method Post `
-  -Uri "http://127.0.0.1:8080/api/v1/runs/$runId/artifacts/decision" `
-  -ContentType 'application/json' `
-  -Body $review
-```
-
-After accepting, download the proposed files as a ZIP:
-
-```powershell
-Invoke-WebRequest `
-  -Uri "http://127.0.0.1:8080/api/v1/runs/$runId/artifacts/export" `
-  -OutFile '.\approved-proposal.zip'
-```
-
-Export does not install or deploy the proposal. Applying it to a real service remains a separate, reviewed step.
-
-## Choose A Scenario
-
-- `GREENFIELD`: propose a new system or feature. The sample is a URL shortener.
-- `BROWNFIELD`: propose a change to existing code. Provide a read-only snapshot and revision so the planner has concrete context. The snapshot can contain at most 25 files and 120 KB total.
-- `AMBIGUOUS`: use when important requirements are unclear. The workflow creates questions and waits for answers before continuing.
-
-Example Brownfield request:
-
-```powershell
-$request = @{
-  requirement = 'Add click analytics without changing existing redirects'
-  scenario = 'BROWNFIELD'
-  snapshotRevision = 'a1b2c3d'
-  codebaseSnapshot = @(
-    @{ path = 'src/main/java/LinkService.java'; content = 'class LinkService { /* reviewed source excerpt */ }' }
-  )
-} | ConvertTo-Json -Depth 5
-
-Invoke-RestMethod -Method Post `
-  -Uri 'http://127.0.0.1:8080/api/v1/runs' `
-  -ContentType 'application/json' `
-  -Body $request
-```
-
-The revision is declared by the caller; the app does not verify it against Git. It checks snapshot paths and size, rejects likely secret/key files, redacts some secret-like assignments, and treats the content as untrusted text. Brownfield impact and regression checks are candidates for review, not proof that compatibility is preserved.
-
-## Run Checks
-
-```powershell
-# Unit and API tests
+# Unit and API suite
 .\mvnw.cmd -B test
 
-# PostgreSQL integration tests; Docker required
+# Real PostgreSQL 17 Testcontainers integration suite; Docker required
 .\mvnw.cmd -B -Pintegration verify
 
-# Run Greenfield and Brownfield generated builds/tests in the isolated Docker sandbox
+# Exercise the URL-shortener generated project in the network-disabled Docker sandbox
 .\mvnw.cmd -B '-Dorchestrator.validation.enabled=true' '-Dorchestrator.validation.required=true' '-Dtest=AgenticOrchestratorApplicationTests' test
 
-# Online dependency scan through OSV; no NVD database download
+# Online OSV scan; no NVD database download
 docker run --rm -v "${PWD}:/src" ghcr.io/google/osv-scanner:v2.6.0 scan source --recursive /src
 ```
 
-## Further Reading
+## More Detail
 
-- [Requirement traceability and known boundaries](docs/traceability.md)
+- [Traceability and known boundaries](docs/traceability.md)
 - [Architecture and trust boundaries](docs/architecture.md)
-- [Operations, monitoring, and deployment runbook](docs/runbook.md)
-- [Postman demo collection and use cases](postman/README.md)
+- [Operations runbook](docs/runbook.md)
+- [Postman demo guide](postman/README.md)

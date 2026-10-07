@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 760" role="img" aria-labelledby="title desc">
+  <title id="title">Engineering Orchestrator Architecture</title>
+  <desc id="desc">A visual architecture diagram showing the engineer, secured API, application services, Temporal workflow, agent providers, isolated validation, PostgreSQL persistence, human review, and approved ZIP export.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#526477"/></marker>
+    <marker id="arrow-teal" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#147d75"/></marker>
+    <style>
+      text { font-family: "Segoe UI", Arial, sans-serif; fill: #14212d; }
+      .title { font-size: 30px; font-weight: 700; }
+      .subtitle { font-size: 16px; fill: #435466; }
+      .lane { font-size: 14px; font-weight: 700; letter-spacing: 1.2px; fill: #526477; }
+      .card-title { font-size: 19px; font-weight: 700; }
+      .body { font-size: 15px; fill: #33485a; }
+      .small { font-size: 13px; fill: #526477; }
+      .footer-title { font-size: 16px; font-weight: 700; fill: #ffffff; }
+      .footer-body { font-size: 15px; fill: #ffffff; }
+      .footer-note { font-size: 13px; fill: #c8d9e6; }
+      .card { stroke-width: 2; rx: 14; }
+      .line { fill: none; stroke: #526477; stroke-width: 3; marker-end: url(#arrow); }
+      .signal { fill: none; stroke: #147d75; stroke-width: 2.5; stroke-dasharray: 7 6; marker-end: url(#arrow-teal); }
+    </style>
+  </defs>
+  <rect width="1440" height="760" fill="#f5f8fb"/>
+  <text x="48" y="54" class="title">Engineering Orchestrator</text>
+  <text x="48" y="82" class="subtitle">A governed workflow turns a requirement into reviewed, tested proposal files. It does not deploy them.</text>
+  <text x="48" y="126" class="lane">REQUEST AND ORCHESTRATION</text>
+
+  <rect x="48" y="150" width="205" height="168" class="card" fill="#fff4d6" stroke="#bd8418"/>
+  <text x="70" y="185" class="card-title">Engineer</text>
+  <text x="70" y="216" class="body"><tspan x="70">Requirement, scenario,</tspan><tspan x="70" dy="23">clarifications and approvals</tspan></text>
+  <text x="70" y="286" class="small">Postman / HTTP API</text>
+
+  <rect x="300" y="150" width="230" height="168" class="card" fill="#e8f1fb" stroke="#3977a8"/>
+  <text x="322" y="185" class="card-title">Spring Boot API</text>
+  <text x="322" y="216" class="body"><tspan x="322">JWT scopes in secure mode</tspan><tspan x="322" dy="23">Local mode: loopback only</tspan><tspan x="322" dy="23">Request size / rate guard</tspan></text>
+
+  <rect x="578" y="150" width="230" height="168" class="card" fill="#e8f1fb" stroke="#3977a8"/>
+  <text x="600" y="185" class="card-title">Application Layer</text>
+  <text x="600" y="216" class="body"><tspan x="600">Validates requirement</tspan><tspan x="600" dy="23">Builds dependency plan</tspan><tspan x="600" dy="23">Stores decisions and events</tspan></text>
+
+  <rect x="856" y="150" width="230" height="168" class="card" fill="#e8f1fb" stroke="#3977a8"/>
+  <text x="878" y="185" class="card-title">Temporal Workflow</text>
+  <text x="878" y="216" class="body"><tspan x="878">Durable waits / signals</tspan><tspan x="878" dy="23">Parallel DAG tasks</tspan><tspan x="878" dy="23">Bounded retries and safe-stop</tspan></text>
+
+  <rect x="1134" y="150" width="258" height="168" class="card" fill="#e9f5ef" stroke="#32845f"/>
+  <text x="1156" y="185" class="card-title">Agent Provider</text>
+  <text x="1156" y="216" class="body"><tspan x="1156">Deterministic URL-shortener</tspan><tspan x="1156" dy="23">or configured LLM provider</tspan><tspan x="1156" dy="23">Project-specific artifact root</tspan></text>
+
+  <path d="M253 234 H292" class="line"/>
+  <path d="M530 234 H570" class="line"/>
+  <path d="M808 234 H848" class="line"/>
+  <path d="M1086 234 H1126" class="line"/>
+
+  <text x="48" y="370" class="lane">PROPOSAL, VALIDATION, AND HUMAN CONTROL</text>
+  <path d="M1263 318 V390 H144 V425" class="line"/>
+
+  <rect x="48" y="430" width="205" height="166" class="card" fill="#e9f5ef" stroke="#32845f"/>
+  <text x="68" y="466" class="card-title">Generated Files</text>
+  <text x="68" y="497" class="body"><tspan x="68">Isolated project namespace</tspan><tspan x="68" dy="23">Source, tests, docs, schema</tspan></text>
+  <text x="68" y="570" class="small">No workspace mutation</text>
+
+  <rect x="319" y="430" width="228" height="166" class="card" fill="#f0ebfa" stroke="#7756a3"/>
+  <text x="341" y="466" class="card-title">Docker Sandbox</text>
+  <text x="341" y="497" class="body"><tspan x="341">Build and run generated tests</tspan><tspan x="341" dy="23">No network; capped resources</tspan><tspan x="341" dy="23">Temporary workspace removed</tspan></text>
+
+  <rect x="613" y="430" width="228" height="166" class="card" fill="#e8f1fb" stroke="#3977a8"/>
+  <text x="635" y="466" class="card-title">Validation Evidence</text>
+  <text x="635" y="497" class="body"><tspan x="635">Static policy checks</tspan><tspan x="635" dy="23">Build/test result and logs</tspan><tspan x="635" dy="23">Report retained with artifacts</tspan></text>
+
+  <rect x="907" y="430" width="205" height="166" class="card" fill="#e8f3f3" stroke="#287d80"/>
+  <text x="929" y="466" class="card-title">PostgreSQL</text>
+  <text x="929" y="497" class="body"><tspan x="929">Run / plan / task state</tspan><tspan x="929" dy="23">Artifacts and audit lineage</tspan></text>
+  <text x="929" y="570" class="small">Flyway-managed schema</text>
+
+  <rect x="1178" y="430" width="214" height="166" class="card" fill="#fff4d6" stroke="#bd8418"/>
+  <text x="1200" y="466" class="card-title">Human Review</text>
+  <text x="1200" y="497" class="body"><tspan x="1200">Plan approval before work</tspan><tspan x="1200" dy="23">Artifact approval before ZIP</tspan><tspan x="1200" dy="23">Operator owns deployment</tspan></text>
+
+  <path d="M253 513 H311" class="line"/>
+  <path d="M547 513 H605" class="line"/>
+  <path d="M841 513 H899" class="line"/>
+  <path d="M1112 513 H1170" class="line"/>
+  <path d="M1250 430 V340 H420 V326" class="signal"/>
+  <text x="726" y="334" class="small" fill="#147d75">approval / clarification signals</text>
+
+  <rect x="48" y="640" width="1344" height="70" rx="12" fill="#142d3d"/>
+  <text x="72" y="671" class="footer-title">Trust boundary</text>
+  <text x="210" y="671" class="footer-body">The orchestrator stores and tests proposals, then exports an approved ZIP. A human separately applies and deploys it.</text>
+  <text x="72" y="694" class="footer-note">Local Temporal Compose is development-only. Generic non-sample generation requires a configured model provider and human review.</text>
+</svg>
